@@ -1,0 +1,21 @@
+expdir: ???
+resolution: 50                # The number of posterior to compute in the trace
+mc_samples: 50                 # Monte Carlo samples for two-step-ahead ppd
+sample_idx: 0                   # which recursion sample to run (0, ... 99)
+recursion_length: 1000
+num_x_eval: 10               # number of x locations to evaluate the logpmf at
+
+
+lastrun: ${now:%Y-%m-%dT%H:%M:%S%z}
+git: ${githash:}
+
+hydra:
+  run:
+    dir: "./${expdir}"
+  sweep:
+    dir: ${hydra.run.dir}
+    subdir: .
+  job_logging:
+    handlers:
+      file:
+        filename: "./${expdir}/acid.log"

@@ -1,0 +1,9 @@
+tqdm
+numpy
+hydra-core
+jax
+chex
+equinox
+openml
+blackjax
+ucimlrepo

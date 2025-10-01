@@ -1,0 +1,37 @@
+expdir: ???
+batch: null                     # By process all posterior samples one by one
+
+loss: likelihood                # likelihood, quantile
+
+# Whether to run these?
+tabpfn: True
+bb: True
+gibbs: True
+copula: True                    # Code is incomplete. Disable for now
+trace: True
+resolution: 100                # The number of posterior to compute in the trace
+
+# Bayesian bootstrap
+bb_recursion_times: 100         # number of posterior samples
+bb_recursion_length: 2000       # forward recurse for how long
+
+# Gibbs posterior (NUTS sampler)
+gibbs_step_size: 1e-3
+gibbs_n_warmup: 1000            # warmup per chain
+gibbs_n_samples: 2000           # samples per chain
+gibbs_n_chains: 4               #
+
+# Copula posterior
+copula_recursion_times: 100     # number of posterior samples/forward recursion
+copula_recursion_length: 2000   # forward recurse for how long
+copula_num_y_grid: 100        # the number of grid on y (only for continuous y)
+
+lastrun: ${now:%Y-%m-%dT%H:%M:%S%z}
+git: ${githash:}
+
+hydra:
+  run:
+    dir: "./${expdir}"
+  sweep:
+    dir: ${hydra.run.dir}
+    subdir: .
