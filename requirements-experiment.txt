@@ -1,0 +1,17 @@
+torch
+tabpfn
+hydra-core
+tqdm
+jax
+numpy
+equinox
+chex
+
+openml
+ucimlrepo
+scikit-learn
+pandas
+
+equinox
+openml
+blackjax

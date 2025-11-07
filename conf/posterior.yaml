@@ -2,6 +2,7 @@ expdir: ???
 batch: null                     # By process all posterior samples one by one
 
 loss: likelihood                # likelihood, quantile
+seed: 999
 
 # Whether to run these?
 tabpfn: True
@@ -12,8 +13,8 @@ trace: True
 resolution: 100                # The number of posterior to compute in the trace
 
 # Bayesian bootstrap
-bb_recursion_times: 100         # number of posterior samples
-bb_recursion_length: 2000       # forward recurse for how long
+bb_rollout_times: 100         # number of posterior samples
+bb_rollout_length: 2000       # forward recurse for how long
 
 # Gibbs posterior (NUTS sampler)
 gibbs_step_size: 1e-3
@@ -22,8 +23,8 @@ gibbs_n_samples: 2000           # samples per chain
 gibbs_n_chains: 4               #
 
 # Copula posterior
-copula_recursion_times: 100     # number of posterior samples/forward recursion
-copula_recursion_length: 2000   # forward recurse for how long
+copula_rollout_times: 100     # number of posterior samples/forward rollout
+copula_rollout_length: 2000   # forward recurse for how long
 copula_num_y_grid: 100        # the number of grid on y (only for continuous y)
 
 lastrun: ${now:%Y-%m-%dT%H:%M:%S%z}
