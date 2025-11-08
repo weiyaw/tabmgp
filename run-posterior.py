@@ -1,33 +1,30 @@
-import hydra
-from omegaconf import DictConfig, OmegaConf
 import logging
-from data import OPENML_BINARY_CLASSIFICATION, OPENML_CLASSIFICATION, OPENML_REGRESSION
-import utils
-
-import jax
-import jax.numpy as jnp
-from jax import Array
-from jax.typing import ArrayLike
-import chex
-from timeit import default_timer as timer
-import re
 import os
-import numpy as np
-import equinox as eqx
+import re
 from abc import abstractmethod
+from timeit import default_timer as timer
 from typing import Callable
 
+import chex
+import equinox as eqx
+import hydra
+import jax
+import jax.numpy as jnp
+import numpy as np
+from jaxtyping import Array, ArrayLike
+from omegaconf import DictConfig, OmegaConf
 
+import baseline
+import optimizer
+import utils
+from copula import copula_classification, copula_cregression
+from data import OPENML_BINARY_CLASSIFICATION, OPENML_CLASSIFICATION, OPENML_REGRESSION
 from functional import (
     Functional,
     LogisticRegression,
     LinearRegression,
     QuantileRegression,
 )
-
-import optimizer
-import baseline
-from copula import copula_cregression, copula_classification
 from sklearn.preprocessing import LabelEncoder, StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer, make_column_transformer
 
@@ -247,9 +244,8 @@ def load_experiment(
             or exp_name in OPENML_BINARY_CLASSIFICATION
         ):
             preprocessor = DiscreteTarget(dgp.categorical_x, include_x, population_data)
-            functional = LogisticRegression(
-                len(preprocessor.y_encoder.classes_), l2=0.0
-            )
+            n_classes = len(preprocessor.y_encoder.classes_)
+            functional = LogisticRegression(n_classes=n_classes, l2=0.0)
         else:
             raise ValueError(f"{exp_name} not available for {loss} experiment.")
     elif loss.startswith("quantile"):
@@ -270,7 +266,7 @@ def load_experiment(
 
     # Compute the dimension of theta
     if isinstance(functional, LogisticRegression):
-        dim_theta = (processed_data["x"].shape[-1] + 1) * (preprocessor.n_classes - 1)
+        dim_theta = (processed_data["x"].shape[-1] + 1) * (functional.n_classes - 1)
     elif isinstance(functional, QuantileRegression) or isinstance(
         functional, LinearRegression
     ):
@@ -439,12 +435,12 @@ def main(cfg: DictConfig):
                 dgp.train_data, categorical_x, copula_B, copula_T, copula_num_y_grid
             )
 
-        elif isinstance(functional, LogisticRegression) and preprocessor.n_classes == 2:
+        elif isinstance(functional, LogisticRegression) and functional.n_classes == 2:
             copula_full_rollout, copula_obj = copula_classification(
                 dgp.train_data, categorical_x, copula_B, copula_T
             )
 
-        elif isinstance(functional, LogisticRegression) and preprocessor.n_classes > 2:
+        elif isinstance(functional, LogisticRegression) and functional.n_classes > 2:
             logging.info("Copula not available for multiclass classification.")
             copula_full_rollout = None
         else:

@@ -1,17 +1,13 @@
 # %%
-from tqdm import tqdm
-from tabpfn import TabPFNClassifier, TabPFNRegressor
+import warnings
+from typing import Callable
 
-import torch
 import jax
 import numpy as np
-
-from typing import Callable
-import warnings
-
-
-KeyArray = jax.Array
-Array = jax.Array
+import torch
+from jaxtyping import Array, PRNGKeyArray
+from tabpfn import TabPFNClassifier, TabPFNRegressor
+from tqdm import tqdm
 
 warnings.filterwarnings(
     "ignore",
@@ -35,11 +31,15 @@ class TabPFNRegressorPredRule(TabPFNRegressor):
             softmax_temperature=1.0,
             categorical_features_indices=categorical_features_indices,
             fit_mode="low_memory",
-            model_path="./tabpfn-model/tabpfn-v2-regressor.ckpt"
+            model_path="tabpfn-v2-regressor.ckpt",
         )
 
     def sample(
-        self, key: KeyArray, x_new: np.ndarray, x_prev: np.ndarray, y_prev: np.ndarray
+        self,
+        key: PRNGKeyArray,
+        x_new: np.ndarray,
+        x_prev: np.ndarray,
+        y_prev: np.ndarray,
     ) -> np.ndarray:
         # Sample from predictive density
         self.fit(x_prev, y_prev)
@@ -55,7 +55,11 @@ class TabPFNRegressorPredRule(TabPFNRegressor):
         return np.squeeze(y_new)
 
     def bardist_sample(
-        self, key: KeyArray, bardist_icdf: Callable, logits: np.ndarray, t: float = 1.0
+        self,
+        key: PRNGKeyArray,
+        bardist_icdf: Callable,
+        logits: np.ndarray,
+        t: float = 1.0,
     ) -> np.ndarray:
         """Samples values from the bar distribution. A modified version of
         https://github.com/PriorLabs/TabPFN/blob/main/src/tabpfn/model/bar_distribution.py#L576
@@ -64,9 +68,11 @@ class TabPFNRegressorPredRule(TabPFNRegressor):
         """
         p_cdf = jax.random.uniform(key, shape=logits.shape[:-1])
         return np.array(
-            [bardist_icdf(logits[i, :] / t, p).cpu() for i, p in enumerate(p_cdf.tolist())],
+            [
+                bardist_icdf(logits[i, :] / t, p).cpu()
+                for i, p in enumerate(p_cdf.tolist())
+            ],
         )
-        
 
 
 class TabPFNClassifierPredRule(TabPFNClassifier):
@@ -84,11 +90,15 @@ class TabPFNClassifierPredRule(TabPFNClassifier):
             softmax_temperature=1.0,
             categorical_features_indices=categorical_features_indices,
             fit_mode="low_memory",
-            model_path="./tabpfn-model/tabpfn-v2-classifier.ckpt"
+            model_path="tabpfn-v2-classifier.ckpt",
         )
 
     def sample(
-        self, key: KeyArray, x_new: np.ndarray, x_prev: np.ndarray, y_prev: np.ndarray
+        self,
+        key: PRNGKeyArray,
+        x_new: np.ndarray,
+        x_prev: np.ndarray,
+        y_prev: np.ndarray,
     ) -> np.ndarray:
         self.fit(x_prev, y_prev)
         probs_new = self.predict_proba(x_new).squeeze()
@@ -101,26 +111,32 @@ class TabPFNClassifierPredRule(TabPFNClassifier):
         return y_new
 
 
-# def bootstrap(key: KeyArray, data: Array | np.ndarray, n: int) -> np.ndarray:
-#     # Bayesian bootstrap
-#     n_data = data.shape[0]
-#     bootstrap_data = np.concatenate([data, np.zeros((n, data.shape[1]))])
-
-#     for i in range(n):
-#         key, subkey = jax.random.split(key)
-#         # resample with replacement
-#         idx = jax.random.randint(subkey, shape=(), minval=0, maxval=n_data + i)
-#         bootstrap_data[n_data + i] = bootstrap_data[idx]
-#     return bootstrap_data
-
-
-def get_x_new(key, x):
+def get_x_new(key: PRNGKeyArray, x: Array) -> Array:
     # For now, we draw x_new uniformly from x
     idx = jax.random.randint(key, shape=(), minval=0, maxval=x.shape[0])
     return x[None, idx]
 
-def forward_sampling(key, pred_rule, x_train, y_train, rollout_length):
-    # Performs forward sampling using the provided predictive rule. Returns train + rollout data.
+
+def forward_sampling(
+    key: PRNGKeyArray,
+    one_step_ahead: Callable[[PRNGKeyArray, Array, Array, Array], Array],
+    x_train: Array,
+    y_train: Array,
+    rollout_length: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Simulate forward rollouts by iteratively sampling x and y.
+
+    Args:
+        key: Base PRNG key for reproducible sampling.
+        one_step_pred_rule: Callable producing y predictions given a key,
+            candidate x, and all previous x/y observations.
+        x_train: Observed feature matrix used to seed the rollout.
+        y_train: Observed targets aligned with x_train.
+        rollout_length: Number of additional samples to generate.
+
+    Returns:
+        Tuple containing the concatenated x and y arrays (train + rollout).
+    """
 
     assert x_train.shape[0] == y_train.shape[0]
     dim_x = x_train.shape[1]
@@ -140,6 +156,14 @@ def forward_sampling(key, pred_rule, x_train, y_train, rollout_length):
 
         # one-step-ahead prediction of y | x
         rkey, subkey = jax.random.split(rkey)
-        y_full[i] = pred_rule.sample(subkey, x_new, x_prev, y_prev)
+        y_full[i] = one_step_ahead(subkey, x_new, x_prev, y_prev)
 
     return x_full, y_full
+
+
+def one_step_ahead(
+    key: PRNGKeyArray, x_new: Array, x_prev: Array, y_prev: Array
+) -> Array:
+    # Define the logic to draw a sample from the one-step-ahead predictive
+    # distribution y_new ~ P(. | x_new, x_prev, y_prev).
+    pass

@@ -5,5 +5,4 @@ hydra-core
 jax
 chex
 equinox
-openml
-ucimlrepo
+optax

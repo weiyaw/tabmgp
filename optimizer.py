@@ -1,10 +1,10 @@
-import jax
-from jax import Array
-
-import optax
-import optax.tree_utils as otu
 from collections import namedtuple
 from typing import Any, Callable
+
+import jax
+import optax
+import optax.tree_utils as otu
+from jaxtyping import Array
 
 OptResult = namedtuple("OptResult", ["success", "opt_state"])
 Diagnostics = namedtuple("Diagnostics", ["success", "state"])

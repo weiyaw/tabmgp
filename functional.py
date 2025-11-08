@@ -2,17 +2,19 @@
 import jax
 import jax.numpy as jnp
 from jax import vmap
-from jax import Array
 from jax.scipy.special import expit
-import equinox as eqx
+
 import chex
+import equinox as eqx
+import numpy as np
 
 from abc import abstractmethod
-import numpy as np
-import utils
-
-from optimizer import run_lbfgs, Diagnostics
 from typing import Any
+
+from jaxtyping import Array
+
+import utils
+from optimizer import Diagnostics, run_lbfgs
 
 PyTree = Any
 

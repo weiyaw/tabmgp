@@ -1,12 +1,14 @@
+import logging
 import os
 import pickle
-import logging
+import re
 import subprocess
+
+import chex
+import equinox as eqx
 import jax
 import jax.numpy as jnp
-import chex
-import re
-import equinox as eqx
+from jaxtyping import Array
 
 
 def get_n_data(data):
@@ -152,8 +154,8 @@ class OptDiagnostic(eqx.Module):
 
     steps: int  # total number of steps taken
     converged: bool  # whether the optimization converged
-    final_value: jax.Array | None = None  # final value of the objective function
-    path: jax.Array | None = None  # temporarily storing the gradient norm to detect nan
+    final_value: Array | None = None  # final value of the objective function
+    path: Array | None = None  # temporarily storing the gradient norm to detect nan
 
 
 # def run_opt(init_params, fun, opt, max_iter, tol):

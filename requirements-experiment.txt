@@ -1,17 +1,24 @@
+# essential
 torch
 tabpfn
-hydra-core
-tqdm
 jax
+jaxtyping
 numpy
 equinox
 chex
+tqdm
 
+# for configuration management
+hydra-core
+
+# for downloading and splitting datasets
 openml
 ucimlrepo
 scikit-learn
 pandas
 
-equinox
-openml
+# for MCMC
 blackjax
+
+# for optimizer
+optax

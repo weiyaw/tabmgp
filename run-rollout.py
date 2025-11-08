@@ -1,29 +1,23 @@
 # %%
 
-
-import torch
-import jax
-from jax import Array
-from jax.typing import ArrayLike
-from timeit import default_timer as timer
 import logging
 import os
-import hydra
-from omegaconf import DictConfig, OmegaConf
 import warnings
+from timeit import default_timer as timer
+
+import hydra
+import jax
+import torch
+from omegaconf import DictConfig, OmegaConf
 
 import utils
-
-from rollout import forward_sampling, TabPFNClassifierPredRule, TabPFNRegressorPredRule
-
 from data import (
-    load_dgp,
-    OPENML_CLASSIFICATION,
     OPENML_BINARY_CLASSIFICATION,
+    OPENML_CLASSIFICATION,
     OPENML_REGRESSION,
+    load_dgp,
 )
-
-from data import *
+from rollout import TabPFNClassifierPredRule, TabPFNRegressorPredRule, forward_sampling
 
 warnings.filterwarnings(
     "ignore",
@@ -86,7 +80,7 @@ def main(cfg: DictConfig):
 
         x_full, y_full = forward_sampling(
             bkey,
-            pred_rule,
+            pred_rule.sample,
             dgp.train_data["x"],
             dgp.train_data["y"],
             cfg.rollout_length,

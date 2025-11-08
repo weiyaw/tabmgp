@@ -1,10 +1,12 @@
 # %%
+import logging
+import numpy as np
+
 import jax
 import jax.numpy as jnp
 from jax import jit, vmap
-from jax.typing import ArrayLike
-import numpy as np
-import logging
+
+from jaxtyping import ArrayLike
 
 from pr_copula.main_copula_regression_conditional import (
     fit_copula_cregression,

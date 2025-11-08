@@ -1,14 +1,11 @@
+from functools import partial
+from typing import Any, Callable
+
 import jax
 import jax.numpy as jnp
 from jax import vmap
 
-from functools import partial
-
-from jaxtyping import Key
-from jax.typing import ArrayLike
-from jax import Array
-from typing import Callable
-
+from jaxtyping import Array, ArrayLike, PRNGKeyArray
 
 import blackjax
 import utils
@@ -17,7 +14,7 @@ import utils
 
 
 def bootstrap(
-    key: Key, data: dict[str, ArrayLike], rollout_length: int
+    key: PRNGKeyArray, data: dict[str, ArrayLike], rollout_length: int
 ) -> dict[str, ArrayLike]:
     # Bayesian bootstrap
     n_data = utils.get_n_data(data)
@@ -38,7 +35,7 @@ def bootstrap(
 
 @partial(jax.jit, static_argnames=["rollout_length", "rollout_times"])
 def bootstrap_many_samples(
-    key: Key,
+    key: PRNGKeyArray,
     data: dict[str, ArrayLike],
     rollout_times: int,
     rollout_length: int,
@@ -49,14 +46,14 @@ def bootstrap_many_samples(
 
 
 def nuts_with_adapt(
-    key: Key,
-    log_posterior: Callable,
+    key: PRNGKeyArray,
+    log_posterior: Callable[..., Array],
     init_theta: Array,
     init_step_size: float,
     n_warmup: int,
     n_samples: int,  # n_samples per chain
     n_chains: int,
-):
+) -> Any:
     # Run multiple NUTS chains, starting from initial theta + some random noise
     chain_keys = jax.random.split(key, n_chains)
     samples_ls = []
@@ -75,7 +72,13 @@ def nuts_with_adapt(
     return all_samples
 
 
-def adapt_nuts(key, log_posterior, init_theta, init_step_size, n_warmup):
+def adapt_nuts(
+    key: PRNGKeyArray,
+    log_posterior: Callable[..., Array],
+    init_theta: Array,
+    init_step_size: float,
+    n_warmup: int,
+) -> tuple[Any, Any]:
     # Adapt the NUTS sampler to find the optimal step size
     adapt = blackjax.window_adaptation(
         blackjax.nuts, log_posterior, initial_step_size=init_step_size
@@ -86,7 +89,13 @@ def adapt_nuts(key, log_posterior, init_theta, init_step_size, n_warmup):
 
 
 @partial(jax.jit, static_argnames=["log_posterior", "n_samples"])
-def nuts_sampler(key, log_posterior, init_state, nuts_parameters, n_samples):
+def nuts_sampler(
+    key: PRNGKeyArray,
+    log_posterior: Callable[..., Array],
+    init_state: Any,
+    nuts_parameters: dict[str, Any],
+    n_samples: int,
+) -> tuple[Array, dict[str, Array]]:
 
     nuts = blackjax.nuts(log_posterior, **nuts_parameters)
     state = init_state  # use the warmed state from adaptation
