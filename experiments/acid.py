@@ -1,20 +1,19 @@
 import os
-from tabpfn import TabPFNClassifier, TabPFNRegressor
+
+from rollout import TabPFNClassifierPredRule, TabPFNRegressorPredRule
 import jax
 import jax.numpy as jnp
 import chex
 import numpy as np
 
 from jax.typing import ArrayLike
-from typing import Callable
 from scipy.special import logsumexp, log_softmax
 
 import torch
 
 from timeit import default_timer as timer
 
-
-from posterior import (
+from data import (
     OPENML_CLASSIFICATION,
     OPENML_BINARY_CLASSIFICATION,
     OPENML_REGRESSION,
@@ -39,61 +38,7 @@ warnings.filterwarnings(
 log = logging.getLogger(__name__)
 
 
-class TabPFNRegresorPPD(TabPFNRegressor):
-
-    def __init__(
-        self,
-        categorical_x: list[bool],
-        n_estimators: int = 8,  # this is the default in 2.0.6
-        average_before_softmax: bool = False,
-        model_path: str = "./tabpfn-model/tabpfn-v2-regressor.ckpt",
-    ):
-        assert isinstance(categorical_x, list)
-        categorical_features_indices = [i for i, c in enumerate(categorical_x) if c]
-        super().__init__(
-            n_estimators=n_estimators,
-            average_before_softmax=average_before_softmax,
-            softmax_temperature=1.0,
-            categorical_features_indices=categorical_features_indices,
-            fit_mode="fit_with_cache",
-            model_path=model_path,
-        )
-
-    def sample(self, key: ArrayLike, x_new: np.ndarray) -> np.ndarray:
-        # Sample from predictive density
-        # self.fit(x_prev, y_prev)
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message="overflow encountered in cast",
-                category=RuntimeWarning,
-            )
-            pred_output = self.predict(x_new, output_type="full")
-        bardist = pred_output["criterion"]
-        logits = pred_output["logits"]
-        y_new = self.bardist_sample(key, bardist.icdf, logits)
-        return y_new
-
-    def bardist_sample(
-        self,
-        key: ArrayLike,
-        bardist_icdf: Callable,
-        logits: torch.Tensor,
-        t: float = 1.0,
-    ) -> np.ndarray:
-        """Samples values from the bar distribution. A modified version of
-        https://github.com/PriorLabs/TabPFN/blob/main/src/tabpfn/model/bar_distribution.py#L576
-
-        Temperature t.
-        """
-        chex.assert_rank(logits, 2)
-        p_cdf = jax.random.uniform(key, shape=logits.shape[:-1])
-        return np.asarray(
-            [
-                bardist_icdf(logits[i, :] / t, p).cpu()
-                for i, p in enumerate(p_cdf.tolist())
-            ],
-        )
+class TabPFNRegresorPredRuleAcid(TabPFNRegressorPredRule):
 
     def log_prob(self, x_new: np.ndarray) -> np.ndarray:
         with warnings.catch_warnings():
@@ -107,72 +52,10 @@ class TabPFNRegresorPPD(TabPFNRegressor):
         return log_softmax(logits, axis=-1)
 
 
-class TabPFNClassifierPPD(TabPFNClassifier):
-
-    def __init__(
-        self,
-        categorical_x: list[bool],
-        n_estimators: int = 4,  # this is the default in 2.0.6
-        average_before_softmax: bool = False,
-        model_path: str = "./tabpfn-model/tabpfn-v2-classifier.ckpt",
-    ):
-        assert isinstance(categorical_x, list)
-        categorical_features_indices = [i for i, c in enumerate(categorical_x) if c]
-        super().__init__(
-            n_estimators=n_estimators,
-            average_before_softmax=average_before_softmax,
-            softmax_temperature=1.0,
-            categorical_features_indices=categorical_features_indices,
-            fit_mode="fit_with_cache",
-            model_path=model_path,
-        )
-
-    def sample(
-        self,
-        key: ArrayLike,
-        x_new: np.ndarray,
-    ) -> np.ndarray:
-        probs_new = self.predict_proba(x_new)
-
-        @jax.vmap
-        def batch_choice(k, p):
-            return jax.random.choice(k, a=self.classes_.size, p=p)
-
-        subkeys = jax.random.split(key, probs_new.shape[0])
-        idx_new = batch_choice(subkeys, probs_new)
-
-        y_new = self.classes_[idx_new]
-        return y_new
+class TabPFNClassifierPredRuleAcid(TabPFNClassifierPredRule):
 
     def log_prob(self, x_new: np.ndarray) -> np.ndarray:
         return np.log(self.predict_proba(x_new))
-
-
-class DGPGamma:
-    """
-    Draw the weights from a prior and fixed to it. Draw x from a Unif(-1, 1).
-    """
-
-    input_key: ArrayLike
-    gshape: float  # shape parameter of the gamma distribution
-    gscale: float  # scale parameter of the gamma distribution
-    train_data: dict[str, np.ndarray]
-
-    def __init__(self, key: ArrayLike, n: int, gshape: float, gscale: float):
-        self.input_key = key
-        key, data_key = jax.random.split(key, 2)
-        self.gshape = gshape
-        self.gscale = gscale
-        self.train_data = self.get_data(data_key, n)
-
-    def get_data(self, key: ArrayLike, n: int) -> dict[str, np.ndarray]:
-        key, x_key, y_key = jax.random.split(key, 3)
-        x_train = jax.random.uniform(x_key, shape=(n, 1), minval=0, maxval=1)
-        y_train = jax.random.gamma(y_key, shape=(n,), a=self.gshape) * self.gscale
-        return {
-            "x": np.asarray(x_train, dtype=np.float64),
-            "y": np.asarray(y_train, dtype=np.float64),
-        }
 
 
 def bin_logprob(x, minlength=0):
@@ -237,24 +120,16 @@ def unique_rows(arr):
     return np.array(unique_rows, dtype=object)
 
 
-# def delta_cond_logppd(key, ppd, x_support, idx_prev, y_prev, L):
 def delta_cond_logppd(key, ppd, x_eval, x_prev, y_prev, L):
-    # chex.assert_rank(x_support, 2)
-    # chex.assert_equal_shape_prefix([idx_prev, y_prev], 1)
-    # n_uniq_x = x_support.shape[0]
 
     # One-step-ahead ppd (cond y | x_eval)
     ppd.fit(x_prev, y_prev)
-    # one_step_logpmf_x = bin_logprob(idx_prev, minlength=n_uniq_x)
     chex.assert_shape(x_eval, (1, None))
     one_step_cond_logpmf_y_x = ppd.log_prob(x_eval)
     chex.assert_shape(one_step_cond_logpmf_y_x, (1, None))
-    # one_step_joint_logpmf_y_x = one_step_cond_logpmf_y_x + one_step_logpmf_x[:, None]
 
     # Draw samples from the one-step-ahead ppd to Monte-Carlo estimate
     # two-step-ahead ppd
-    # key, subkey = jax.random.split(key)
-    # idx_new = jax.random.choice(subkey, a=idx_prev, shape=(L,), replace=True)
     key, subkey = jax.random.split(key)
     batch_x_eval = np.tile(x_eval, (L, 1))
     y_new = ppd.sample(subkey, batch_x_eval)
@@ -266,13 +141,9 @@ def delta_cond_logppd(key, ppd, x_eval, x_prev, y_prev, L):
     for i in range(L):
         y_plus_1 = np.concatenate([y_prev, y_new[i, np.newaxis]])
         ppd.fit(x_plus_1, y_plus_1)
-        # two_step_logpmf_x = bin_logprob(idx_plus_1, minlength=n_uniq_x)
         two_step_cond_logpmf_y_x = ppd.log_prob(x_eval)
         chex.assert_shape(two_step_cond_logpmf_y_x, (1, None))
         two_step_cond_logpmf_y_x_ls.append(two_step_cond_logpmf_y_x)
-        # two_step_joint_logpmf_y_x_ls.append(
-        #     two_step_cond_logpmf_y_x + two_step_logpmf_x[:, None]
-        # )
     two_step_cond_logpmf_y_x = np.stack(two_step_cond_logpmf_y_x_ls)
     two_step_cond_logpmf_y_x = logsumexp(two_step_cond_logpmf_y_x, axis=0) - np.log(L)
 
@@ -354,10 +225,7 @@ def main(cfg: DictConfig):
     torch.manual_seed((cfg.sample_idx + 1) * 12)
 
     name = utils.get_name(path)
-    if name == "gamma":
-        dgp = DGPGamma(key=jax.random.key(501), n=25, gshape=2.0, gscale=2.0)
-    else:
-        dgp = utils.read_from(f"{path}/dgp.pickle")
+    dgp = utils.read_from(f"{path}/dgp.pickle")
 
     n_train = utils.get_n_data(dgp.train_data)
     N = n_train + cfg.recursion_length
@@ -367,15 +235,15 @@ def main(cfg: DictConfig):
     dim_x = x_support.shape[1]
 
     if name is not None and name.startswith("classification"):
-        pfn_ppd = TabPFNClassifierPPD([False] * dim_x)
+        pfn_ppd = TabPFNClassifierPredRuleAcid([False] * dim_x)
     elif name is not None and name.startswith("regression"):
-        pfn_ppd = TabPFNRegresorPPD([False] * dim_x)
+        pfn_ppd = TabPFNRegresorPredRuleAcid([False] * dim_x)
     elif name in OPENML_CLASSIFICATION + OPENML_BINARY_CLASSIFICATION:
-        pfn_ppd = TabPFNClassifierPPD(dgp.categorical_x)
+        pfn_ppd = TabPFNClassifierPredRuleAcid(dgp.categorical_x)
     elif name in OPENML_REGRESSION:
-        pfn_ppd = TabPFNRegresorPPD(dgp.categorical_x)
+        pfn_ppd = TabPFNRegresorPredRuleAcid(dgp.categorical_x)
     elif name == "gamma":
-        pfn_ppd = TabPFNRegresorPPD([False] * dim_x)
+        pfn_ppd = TabPFNRegresorPredRuleAcid([False] * dim_x)
     else:
         raise ValueError(f"Unknown dgp name {name}")
 

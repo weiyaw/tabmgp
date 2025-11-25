@@ -5,28 +5,32 @@ import matplotlib.pyplot as plt
 import numpy as np
 from jax import vmap
 
+from scipy.special import logsumexp
+
 import seaborn as sns
 import utils
 import pandas as pd
-from utils import get_name, get_data_size, get_resample_x
-from utils import tree_shape, OptDiagnostic
-from posterior import load_experiment, Diagnostics, OptResult
+from utils import get_data_name, get_data_size, get_resample_x
+from utils import tree_shape
+from experiment_setup import load_experiment, get_experiment_paths
+from optimizer import Diagnostics, OptResult
 
 from credible_set import marginal_credible_interval
-from plot_settings import DATES, COLOR_PALETTE, POSTERIOR_NAMES
 
-# from dgp import *
+
 import os
 import re
+import ast
+
+from plot_settings import DATES, COLOR_PALETTE, POSTERIOR_NAMES
+
+jax.config.update("jax_enable_x64", True)
 
 
-def get_plot_name(path):
-    # get name and data size
-    return f"{get_name(path)}-{get_data_size(path)}-{get_resample_x(path)}"
-
-
-data_info = utils.read_from(f"./data_info.pickle")
-savedir = "../paper/plots"
+data_info = pd.read_csv("./data_info.csv")
+data_info["theta_name"] = data_info["theta_name"].apply(ast.literal_eval)
+output_dir = "../outputs"
+savedir = "./plots"
 loss = "likelihood"
 
 
@@ -93,19 +97,17 @@ def read_max_T_post(path, method, loss):
 
 for date in DATES:
     print(date)
-    experiment = load_experiment(f"../outputs/{date}", loss=loss)
-    path = experiment.all_paths[0]
-    name = utils.get_name(path)
-
-    theta_true = experiment.theta_true
-    mle, mle_opt = experiment.minimize_loss(
-        experiment.all_train_data[0], theta_true, None
+    all_paths = get_experiment_paths(f"{output_dir}/{date}")
+    data_name = get_data_name(all_paths[0])
+    _, functional, theta_true, processed_data = load_experiment(
+        all_paths[0], loss="likelihood"
     )
+    mle, mle_opt = functional.minimize_loss(processed_data, theta_true, None)
     assert mle_opt.success
-    theta_name = data_info.query("name == @name")["theta_name"].item()
+    theta_name = data_info.query("name == @data_name")["theta_name"].item()
 
     for method in ["tabpfn", "bb", "copula"]:
-        trace, trace_info = read_trace(path, method, loss)
+        trace, trace_info = read_trace(all_paths[0], method, loss)
         if trace is None:
             continue
 
@@ -176,7 +178,9 @@ for date in DATES:
         facet.figure.legend(handles, labels, loc="lower right")
 
         os.makedirs(f"{savedir}/trace", exist_ok=True)
-        facet.savefig(f"{savedir}/trace/{name}-{method}-trace.pdf", bbox_inches="tight")
+        facet.savefig(
+            f"{savedir}/trace/{data_name}-{method}-trace.pdf", bbox_inches="tight"
+        )
         plt.close(facet.figure)
 
 
@@ -187,21 +191,17 @@ for date in DATES:
 ########################################################################
 ########################################################################
 
-# %%
-
 
 for date in DATES:
     print(date)
-    experiment = load_experiment(f"../outputs/{date}", loss=loss)
-    path = experiment.all_paths[0]
-    name = utils.get_name(path)
-
-    theta_true = experiment.theta_true
-    mle, mle_opt = experiment.minimize_loss(
-        experiment.all_train_data[0], theta_true, None
+    all_paths = get_experiment_paths(f"{output_dir}/{date}")
+    data_name = utils.get_data_name(all_paths[0])
+    _, functional, theta_true, processed_data = load_experiment(
+        all_paths[0], loss="likelihood"
     )
+    mle, mle_opt = functional.minimize_loss(processed_data, theta_true, None)
     assert mle_opt.success
-    theta_name = data_info.query("name == @name")["theta_name"].item()
+    theta_name = data_info.query("name == @data_name")["theta_name"].item()
 
     ALPHA = 0.05
     assert theta_true.size == mle.size
@@ -211,9 +211,11 @@ for date in DATES:
     data_list = []
     for method in POSTERIOR_NAMES.keys():
         if method == "gibbs":
-            data = utils.read_from(f"{path}/posterior-{loss}/gibbs-post.pickle")[0]
+            data = utils.read_from(
+                f"{all_paths[0]}/posterior-{loss}/gibbs-post.pickle"
+            )[0]
         else:
-            data = read_max_T_post(path, method, loss)
+            data = read_max_T_post(all_paths[0], method, loss)
         if data is None:
             continue
         assert data.shape[-1] == dim_theta
@@ -279,13 +281,15 @@ for date in DATES:
     facet.figure.legend(handles=line_handles + density_handles, loc="lower right")
 
     os.makedirs(f"{savedir}/density", exist_ok=True)
-    facet.savefig(f"{savedir}/density/{name}-density.pdf", bbox_inches="tight")
+    facet.savefig(f"{savedir}/density/{data_name}-density.pdf", bbox_inches="tight")
     plt.close(facet.figure)
 
 # %%
+# Boxplot of the marginal coverage (synthetic setups)
 
-
+# Run table.py to get this table
 coverage = pd.read_csv("table/marginal-coverage.csv")
+ALPHA = 1 - coverage["ideal_rate"][0]
 
 data_info["np_ratio"] = data_info["training_size"] / data_info["dim_theta"]
 data_info = data_info.sort_values(
@@ -310,12 +314,11 @@ synthetic_data_xtick_label = {
     "classification-gmm--1": "GMM(-1)",
     "classification-gmm--2": "GMM(-2)",
 }
-# %%
 
 plt.figure(figsize=(12, 4))
 sns.boxplot(
     data=coverage,
-    x="name",
+    x="data",
     y="rate",
     hue="post_name",
     palette=COLOR_PALETTE,
@@ -340,11 +343,11 @@ plt.savefig(
 )
 
 # %%
-
+# Boxplot of the marginal coverage (linear regression, real data)
 plt.figure(figsize=(12, 4))
 sns.boxplot(
     data=coverage,
-    x="name",
+    x="data",
     y="rate",
     hue="post_name",
     palette=COLOR_PALETTE,
@@ -365,10 +368,11 @@ plt.savefig(
 )
 # %%
 
+# Boxplot of the marginal coverage (logistic regression, real data)
 plt.figure(figsize=(12, 4))
 sns.boxplot(
     data=coverage,
-    x="name",
+    x="data",
     y="rate",
     hue="post_name",
     palette=COLOR_PALETTE,
@@ -388,15 +392,15 @@ plt.savefig(
     bbox_inches="tight",
 )
 # %%
+# Expected l1-norm convergence plot (all data)
 fig = plt.figure(figsize=(7, 3))
 for date in DATES:
     print(date)
-    date_path = f"../outputs/{date}"
-    experiment = load_experiment(date_path, loss)
-    path_0 = experiment.all_paths[0]
-    name = utils.get_name(experiment.all_paths[0])
+    date_path = f"{output_dir}/{date}"
+    all_paths = get_experiment_paths(date_path)
+    data_name = utils.get_data_name(all_paths[0])
 
-    trace, trace_info = read_trace(path_0, "tabpfn", loss)
+    trace, trace_info = read_trace(all_paths[0], "tabpfn", loss)
     l1 = np.mean(np.abs((trace - trace[0])), axis=-1)
     N_idx = np.arange(
         0, trace_info["end"] - trace_info["start"] + 1, trace_info["resolution"]
@@ -415,6 +419,7 @@ fig.savefig(
 
 
 # %%
+# Expected l1-norm convergence plot (individual data)
 TITLE = {
     "2025-06-02": "Regression $N(0, 1)$",
     "2025-06-07-a": "Regression $t_5$",
@@ -454,20 +459,19 @@ nrows = (n_plots + ncols - 1) // ncols
 
 for method in ["tabpfn", "bb"]:
     # Set squeeze=False so 'axes' is always a 2D array
-    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 6, nrows * 3.5), squeeze=False)
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(ncols * 6, nrows * 3.5), squeeze=False
+    )
 
     # Flatten the 2D array of axes into a 1D array for easy looping
     axes = axes.flatten()
     plot_idx = 0  # Use this index to track which axis to plot on
 
-    for date in TITLE.keys():
+    for date, data_name in TITLE.items():
         print(date)
-        date_path = f"../outputs/{date}"
-        experiment = load_experiment(date_path, loss)
-        path_0 = experiment.all_paths[0]
-        name = utils.get_name(experiment.all_paths[0])
-
-        trace, trace_info = read_trace(path_0, method, loss)
+        date_path = f"{output_dir}/{date}"
+        all_paths = get_experiment_paths(date_path)
+        trace, trace_info = read_trace(all_paths[0], method, loss)
         if trace is None:
             continue  # Skip this item
 
@@ -505,16 +509,14 @@ post_ls = []
 for d, n in zip(
     ["2025-06-82", "2025-06-83", "2025-06-84", "2025-06-85"], [500, 1000, 1500, 2000]
 ):
-    path = f"../outputs/{d}/name=regression-fixed dim_x=2 noise_std=0.1 resample_x=bb data={n} seed=1001"
+    path = f"{output_dir}/{d}/name=regression-fixed dim_x=2 noise_std=0.1 resample_x=bb data={n} seed=1001"
     for root, _, files in os.walk(path):
         for f in files:
             if f == "tabpfn-2000-post.pickle":
                 post_ls.append((n, utils.read_from(os.path.join(root, f))[0]))
 
-exp2000 = load_experiment(path, loss=loss)
-theta_true = exp2000.theta_true
+_, _, theta_true, _ = load_experiment(path, loss=loss)
 dim_theta = theta_true.shape[0]
-init_theta = jax.random.normal(jax.random.key(1), (dim_theta,))
 
 
 theta_name = ["Intercept", "x1", "x2"]
@@ -524,7 +526,9 @@ for d, ax in enumerate(axes.flat):
     for n, post in post_ls:
         assert post.shape[1] == theta_true.size
         sns.kdeplot(data=post[:, d], alpha=0.1, fill=True, ax=ax, label=f"n={n}")
-    ax.axvline(x=theta_true[d], color="red", linestyle="--", alpha=1, label="Population")
+    ax.axvline(
+        x=theta_true[d], color="red", linestyle="--", alpha=1, label="Population"
+    )
     ax.set_title(theta_name[d])
 
 handles, labels = axes.flat[0].get_legend_handles_labels()
@@ -536,11 +540,9 @@ plt.savefig(f"{savedir}/toy-concentration.pdf")
 # %%
 # PLOT INTERCEPT DENSITY OF CONCRETE
 
-path = "../outputs/2025-07-04/name=concrete resample_x=bb data=100 seed=1001" 
-experiment = load_experiment(path, loss=loss)
-theta_true = experiment.theta_true
-train_data = experiment.all_train_data[0]
-mle, mle_opt = experiment.minimize_loss(train_data, theta_true, None)
+path = f"{output_dir}/2025-07-04/name=concrete resample_x=bb data=100 seed=1001"
+_, functional, theta_true, train_data = load_experiment(path, loss=loss)
+mle, _ = functional.minimize_loss(train_data, theta_true, None)
 
 fig = plt.figure(figsize=(7, 3))
 for i, method in enumerate(POSTERIOR_NAMES.keys()):
@@ -565,8 +567,10 @@ line_handles = [
     plt.Line2D([0], [0], color="red", linestyle="--", label="Population"),
     plt.Line2D([0], [0], color="blue", linestyle="--", label="Empirical"),
 ]
-density_handles =  [
-    plt.Line2D([0], [0], color=COLOR_PALETTE[name], label=POSTERIOR_NAMES[name], marker="o")
+density_handles = [
+    plt.Line2D(
+        [0], [0], color=COLOR_PALETTE[name], label=POSTERIOR_NAMES[name], marker="o"
+    )
     for name in POSTERIOR_NAMES.keys()
 ]
 handles = line_handles + density_handles
@@ -578,8 +582,7 @@ fig.savefig(f"{savedir}/concrete-intercept-kde.pdf", bbox_inches="tight")
 # %%
 # PLOT ACID RESULTS FOR CLASSIFICATION
 
-from scipy.special import logsumexp
-input_dir = "../outputs/2025-06-97/name=classification-fixed dim_x=2 resample_x=bb data=100 seed=1001"
+input_dir = f"{output_dir}/2025-06-97/name=classification-fixed dim_x=2 resample_x=bb data=100 seed=1001"
 acid_dir = f"{input_dir}/acid"
 
 acid_eval_dir = [
@@ -588,6 +591,7 @@ acid_eval_dir = [
     if (m := re.search(r"x-eval-(\d+)", p))
 ]
 acid_eval_dir.sort(key=lambda mp: int(mp[0].group(1)))
+
 
 def compile_cond_logpmf(acid_eval_dir):
     logpmf_matches = [
@@ -610,7 +614,9 @@ def compile_cond_logpmf(acid_eval_dir):
 
 
 cond_logpmf_y_x = [compile_cond_logpmf(p)[0] for _, p in acid_eval_dir]
-cond_logpmf_y_x = {k: np.stack([dic[k] for dic in cond_logpmf_y_x]) for k in cond_logpmf_y_x[0]}
+cond_logpmf_y_x = {
+    k: np.stack([dic[k] for dic in cond_logpmf_y_x]) for k in cond_logpmf_y_x[0]
+}
 
 _, N_idx = compile_cond_logpmf(acid_eval_dir[0][1])
 

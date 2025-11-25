@@ -2,7 +2,6 @@ import logging
 import math
 import os
 from abc import abstractmethod
-from typing import Any, BinaryIO
 
 import equinox as eqx
 import jax
@@ -11,7 +10,6 @@ import numpy as np
 import openml
 import pandas as pd
 from jaxtyping import Array, ArrayLike, PRNGKeyArray
-from omegaconf import DictConfig, OmegaConf
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import KBinsDiscretizer
 from ucimlrepo import fetch_ucirepo

@@ -123,10 +123,12 @@ def get_date_part(path):
 
 
 def format_decimal(x, decimals=2):
-    return f"{x:.{decimals}f}"
+    if x:
+        return f"{x:.{decimals}f}"
+    return None
 
 
-def get_name(path):
+def get_data_name(path):
     match = re.search(r"name=([^ ]+)", path)
     if match:
         if match.group(1) == "classification-fixed":
@@ -145,72 +147,3 @@ def get_name(path):
             return f"regression-t-{match2.group(1)}"
         return match.group(1)
     return None
-
-
-class OptDiagnostic(eqx.Module):
-    """
-    Diagnostic information for optimization
-    """
-
-    steps: int  # total number of steps taken
-    converged: bool  # whether the optimization converged
-    final_value: Array | None = None  # final value of the objective function
-    path: Array | None = None  # temporarily storing the gradient norm to detect nan
-
-
-# def run_opt(init_params, fun, opt, max_iter, tol):
-#     # LBFGS from optax
-#     # https://optax.readthedocs.io/en/stable/_collections/examples/lbfgs.html#l-bfgs-solver
-#     value_and_grad_fun = optax.value_and_grad_from_state(fun)
-
-#     def step(carry):
-#         params, state = carry
-#         value, grad = value_and_grad_fun(params, state=state)
-#         updates, state = opt.update(
-#             grad, state, params, value=value, grad=grad, value_fn=fun
-#         )
-#         params = optax.apply_updates(params, updates)
-#         return params, state
-
-#     def continuing_criterion(carry):
-#         _, state = carry
-#         iter_num = otu.tree_get(state, "count")
-#         grad = otu.tree_get(state, "grad")
-#         err = otu.tree_l2_norm(grad)
-#         return (iter_num == 0) | ((iter_num < max_iter) & (err >= tol))
-
-#     init_carry = (init_params, opt.init(init_params))
-#     final_params, final_state = jax.lax.while_loop(
-#         continuing_criterion, step, init_carry
-#     )
-#     return final_params, final_state
-
-
-def newton_descent(f, x0, step, tol, max_iter):
-    # Newton-Rahpson to find the argmin of f(x). Stop at convergence.
-
-    def loop_body(state):
-        k, x, x_best, f_best, _ = state
-        hess_f = jax.hessian(f)(x)  # Jacobian of f wrt x
-        grad_f = jax.grad(f)(x)
-        delta_x, resid, rank, s = jnp.linalg.lstsq(hess_f, -grad_f)
-        x_next = x + delta_x
-        x_best, f_best = jax.lax.cond(
-            f(x_next) < f_best,
-            lambda: (x_next, f(x_next)),
-            lambda: (x_best, f_best),
-        )
-        gnorm = jnp.linalg.norm(jax.grad(f)(x_next))
-        return (k + 1, x_next, x_best, f_best, gnorm)
-
-    def loop_cond(state):
-        # Terminate when x is no longer moving or when max_iter is reached
-        k, _, _, _, gnorm = state
-        return jnp.logical_and(gnorm > tol, k < max_iter)
-
-    init_state = (0, x0, x0, f(x0), jnp.inf)
-    total_k, x_final, x_best, f_best, gnorm = jax.lax.while_loop(
-        loop_cond, loop_body, init_state
-    )
-
-    return x_best, OptDiagnostic(total_k, total_k < max_iter, f_best, gnorm)

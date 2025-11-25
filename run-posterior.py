@@ -1,12 +1,10 @@
 import logging
 import os
 import re
-from abc import abstractmethod
+
 from timeit import default_timer as timer
-from typing import Callable
 
 import chex
-import equinox as eqx
 import hydra
 import jax
 import jax.numpy as jnp
@@ -18,154 +16,23 @@ import baseline
 import optimizer
 import utils
 from copula import copula_classification, copula_cregression
-from data import OPENML_BINARY_CLASSIFICATION, OPENML_CLASSIFICATION, OPENML_REGRESSION
+
 from functional import (
-    Functional,
     LogisticRegression,
     LinearRegression,
-    QuantileRegression,
 )
-from sklearn.preprocessing import LabelEncoder, StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer, make_column_transformer
+
+from experiment_setup import load_experiment
 
 jax.config.update("jax_enable_x64", True)
 
 # Evaluate martingale posterior with these many numbers of forward samples
 EVAL_T = [250, 500, 1000, 2000, 3000, 4000, 5000]
 
-
-def make_x_encoder(
-    categorical_x: list[bool], include_x: list[bool]
-) -> ColumnTransformer:
-    """
-    One-hot encode categorical features and standardize numerical features.  We
-    are going to fit an intercept, so drop the first category of each
-    categorical feature to avoid multicollinearity.
-
-    All the columns with False in include_x will be dropped.
-    """
-
-    numerical_x = [(not i) and j for i, j in zip(categorical_x, include_x)]
-    categorical_x = [i and j for i, j in zip(categorical_x, include_x)]
-    return make_column_transformer(
-        (OneHotEncoder(drop="first", sparse_output=False), categorical_x),
-        (StandardScaler(), numerical_x),
-        remainder="drop",
-        sparse_threshold=0,
-        verbose_feature_names_out=False,
-    )
-
-
-class Preprocessor(eqx.Module):
-    @abstractmethod
-    def encode_data(self, data: dict[str, ArrayLike]) -> dict[str, Array]:
-        """
-        Encode the data (both x and y) into suitable format for the model.
-        Args:
-            data: A dict with keys "x" and "y", each with an array-like value.
-        Returns:
-            A dict with keys "x" and "y", each with a jax Array value.
-        """
-        pass
-
-
-class DiscreteTarget(Preprocessor):
-    include_x: list[bool]
-    x_encoder: ColumnTransformer
-    y_encoder: LabelEncoder
-
-    def __init__(
-        self,
-        categorical_x: list[bool],
-        include_x: list[bool],
-        population_data: dict[str, ArrayLike],
-    ):
-
-        assert len(include_x) == len(categorical_x)
-        self.include_x = include_x
-
-        # population_data = dgp.get_population()
-        chex.assert_shape(population_data["x"], (None, len(categorical_x)))
-        chex.assert_rank(population_data["y"], 1)
-
-        self.x_encoder = make_x_encoder(categorical_x, include_x).fit(
-            population_data["x"]
-        )
-        self.y_encoder = LabelEncoder().fit(population_data["y"])
-
-    def encode_data(self, data: dict[str, ArrayLike]) -> dict[str, Array]:
-        batch_shape = data["x"].shape[:-1]
-        chex.assert_shape(data["x"], (*batch_shape, self.x_encoder.n_features_in_))
-        chex.assert_shape(data["y"], batch_shape)
-        flat_x = jnp.reshape(data["x"], (-1, self.x_encoder.n_features_in_))
-        flat_y = jnp.reshape(data["y"], (-1,))
-        x = jnp.reshape(self.x_encoder.transform(flat_x), (*batch_shape, -1))
-        y = jnp.reshape(self.y_encoder.transform(flat_y), batch_shape)
-        return {
-            "x": jnp.asarray(x, dtype=jnp.float64),
-            "y": jnp.asarray(y, dtype=jnp.int16),
-        }
-
-
-class ContinuousTarget(Preprocessor):
-    include_x: list[bool]
-    x_encoder: ColumnTransformer
-    y_encoder: StandardScaler
-
-    def __init__(
-        self,
-        categorical_x: list[bool],
-        include_x: list[bool],
-        population_data: dict[str, ArrayLike],
-    ):
-
-        assert len(include_x) == len(categorical_x)
-        self.include_x = include_x
-
-        # population_data = dgp.get_population()
-        chex.assert_shape(population_data["x"], (None, len(categorical_x)))
-        chex.assert_rank(population_data["y"], 1)
-
-        self.x_encoder = make_x_encoder(categorical_x, include_x).fit(
-            population_data["x"]
-        )
-        self.y_encoder = StandardScaler().fit(population_data["y"][..., None])
-
-    def encode_data(self, data: dict[str, ArrayLike]) -> dict[str, Array]:
-        batch_shape = data["x"].shape[:-1]
-        chex.assert_shape(data["x"], (*batch_shape, self.x_encoder.n_features_in_))
-        chex.assert_shape(data["y"], batch_shape)
-        flat_x = jnp.reshape(data["x"], (-1, self.x_encoder.n_features_in_))
-        flat_y = jnp.reshape(data["y"], (-1, 1))
-        x = jnp.reshape(self.x_encoder.transform(flat_x), (*batch_shape, -1))
-        y = jnp.reshape(self.y_encoder.transform(flat_y), batch_shape)
-        return {
-            "x": jnp.asarray(x, dtype=jnp.float64),
-            "y": jnp.asarray(y, dtype=jnp.float64),
-        }
-
-
-def get_experiment_paths(output_dir: str, verbose: bool = True) -> list[str]:
-    """
-    Recursively walk down the output_dir to get the paths of all directories (inclusive self) that matches the pattern.
-    Args:
-        output_dir: The directory containing the experiment results.
-        verbose: Whether to print the seed in the paths.
-    Returns:
-        A list of paths to the experiment directories.
-    """
-
-    dir_pattern = re.compile(
-        r"seed=(10[0-9][1-9]|10[1-9][0-9]|1100)$"
-    )  # match any seed between 1001-1100
-    paths = [p for p, _, _ in os.walk(output_dir) if dir_pattern.search(p)]
-    paths.sort(key=lambda p: int(re.search(r"seed=(\d+)", p).group(1)))
-    # Print the order of the paths (i.e. the seed)
-    if verbose:
-        logging.info(
-            f"Path order: {[int(m.group(1)) for p in paths if (m := re.search(r"seed=(\d+)", p))]}"
-        )
-    return paths
+# These are the magic numbers to reproduce the same key from the seed
+BB_KEY = 49195
+NUTS_KEY = 16005
+COPULA_KEY = 91501
 
 
 # Read rollout data (train data + forward samples) from the rollout
@@ -189,112 +56,6 @@ def truncate_rollout(rollout, N):
     leaves = jax.tree.leaves(rollout)
     chex.assert_equal_shape_prefix(leaves, 2)
     return jax.tree.map(lambda x: x[:, :N], rollout)
-
-
-# Use this mask to ignore collinear features in some real datasets. Feature with
-# False will be ignored.
-THETA_MASK = {
-    "airfoil": [True, False, True, True, True],
-    "concrete": [True, False, True, False, True, True, True, True],
-    "energy": [False, False, True, False, True, True, True, True],
-    "grid": [True] * 4 + [False] + [True] * 7,
-    "abalone": [True, False, False, True, False, True, False, False],
-    "fish": [True, True, True, True, True, False],
-    "auction": [True] * 6 + [False],
-    "banknote": [True, True, False, True],
-    "rice": [False, False, False, True, True, False, True],
-    "blood": [True, True, False, True],
-    "skin": [True, False, True],
-    "mozilla": [True, False, True, True, True],
-    "telescope": [True] * 2 + [False] * 2 + [True] * 6,
-    "yeast": [True] * 4 + [False] * 2 + [True] * 2,
-    "wine": [True] * 6 + [False] * 2 + [True] * 3,
-}
-
-
-def load_experiment(
-    experiment_dir: str, loss: str
-) -> tuple[Preprocessor, Functional, Array, dict[str, Array]]:
-    # Load the necessary components to compute posteriors
-
-    if match := re.search(r"name=(\S+)", experiment_dir):
-        exp_name = match.group(1)
-    else:
-        raise ValueError("No match in the directory name")
-
-    dgp = utils.read_from(f"{experiment_dir}/dgp.pickle")
-    population_data = dgp.get_population()
-
-    if exp_name in THETA_MASK:
-        include_x = THETA_MASK[exp_name]
-    else:
-        # Include all features by default
-        include_x = [True] * dgp.train_data["x"].shape[1]
-
-    if loss == "likelihood":
-        # MLE functional
-        if exp_name.startswith("regression-fixed") or exp_name in OPENML_REGRESSION:
-            preprocessor = ContinuousTarget(
-                dgp.categorical_x, include_x, population_data
-            )
-            functional = LinearRegression(l2=0.0)
-        elif (
-            exp_name.startswith("classification-fixed")
-            or exp_name in OPENML_CLASSIFICATION
-            or exp_name in OPENML_BINARY_CLASSIFICATION
-        ):
-            preprocessor = DiscreteTarget(dgp.categorical_x, include_x, population_data)
-            n_classes = len(preprocessor.y_encoder.classes_)
-            functional = LogisticRegression(n_classes=n_classes, l2=0.0)
-        else:
-            raise ValueError(f"{exp_name} not available for {loss} experiment.")
-    elif loss.startswith("quantile"):
-        # Quantile regression functional (only works for continuous target)
-        tau = float(loss.split("-")[1])
-        assert 0 < tau < 1, f"Quantile level must be in (0, 1), got {tau}"
-        logging.info(f"Quantile level: {tau}")
-        preprocessor = ContinuousTarget(dgp.categorical_x, include_x, population_data)
-        if exp_name.startswith("regression-fixed") or exp_name in OPENML_REGRESSION:
-            functional = QuantileRegression(tau, l2=0.0)
-        else:
-            raise ValueError(f"{exp_name} not available for {loss} experiment.")
-    else:
-        raise ValueError(f"Unknown loss: {loss}")
-
-    # Normalised datasets with collinear features removed
-    processed_data = preprocessor.encode_data(dgp.train_data)
-
-    # Compute the dimension of theta
-    if isinstance(functional, LogisticRegression):
-        dim_theta = (processed_data["x"].shape[-1] + 1) * (functional.n_classes - 1)
-    elif isinstance(functional, QuantileRegression) or isinstance(
-        functional, LinearRegression
-    ):
-        dim_theta = processed_data["x"].shape[-1] + 1
-    else:
-        raise NotImplementedError
-
-    # Compute true theta
-    scaled_population_data = preprocessor.encode_data(population_data)
-    init_theta = jax.random.normal(jax.random.key(1), (dim_theta,))
-    theta_true, opt_state = functional.minimize_loss(
-        scaled_population_data, init_theta, None
-    )
-
-    if hasattr(opt_state, "success") and not opt_state.success:
-        # Backup if our default optimizer fails
-        logging.info("Optimization failed. theta_true might be wrong. Use scipy.")
-        theta_true = optimizer.scipy_mle(
-            functional.loss, scaled_population_data, init_theta
-        )
-
-    return preprocessor, functional, theta_true, processed_data
-
-
-# These are the magic numbers to reproduce the same key from the seed
-BB_KEY = 49195
-NUTS_KEY = 16005
-COPULA_KEY = 91501
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="posterior")

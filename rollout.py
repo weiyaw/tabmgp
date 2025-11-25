@@ -160,10 +160,3 @@ def forward_sampling(
 
     return x_full, y_full
 
-
-def one_step_ahead(
-    key: PRNGKeyArray, x_new: Array, x_prev: Array, y_prev: Array
-) -> Array:
-    # Define the logic to draw a sample from the one-step-ahead predictive
-    # distribution y_new ~ P(. | x_new, x_prev, y_prev).
-    pass
