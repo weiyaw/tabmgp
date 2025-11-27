@@ -13,7 +13,7 @@ import torch
 
 from timeit import default_timer as timer
 
-from data import (
+from dgp import (
     OPENML_CLASSIFICATION,
     OPENML_BINARY_CLASSIFICATION,
     OPENML_REGRESSION,
@@ -204,7 +204,7 @@ def delta_joint_logppd(key, ppd, x_support, idx_prev, y_prev, L):
     return one_step_joint_logpmf_y_x, two_step_joint_logpmf_y_x
 
 
-@hydra.main(version_base=None, config_path="conf", config_name="diagnostics")
+@hydra.main(version_base=None, config_path="conf", config_name="acid")
 def main(cfg: DictConfig):
     OmegaConf.resolve(cfg)
     path = cfg.expdir

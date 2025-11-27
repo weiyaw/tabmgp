@@ -27,4 +27,3 @@ hydra:
     dir: ${hydra.run.dir}
     subdir: .
 
-# rec_length=${rollout_length}

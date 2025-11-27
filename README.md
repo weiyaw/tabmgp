@@ -79,8 +79,6 @@ TabMGP.
 
 ## For Reproducing Results in the Paper
 
-To be finished.
-
 
 
 <!-- ### Requirements -->
@@ -96,26 +94,93 @@ To be finished.
 <!-- This will install a CPU version of JAX. Please see the [_JAX repo_](https://github.com/google/jax) for the latest -->
 <!-- instructions on how to install JAX on your hardware. -->
 
-<!-- ## File Structure -->
-<!-- ``` -->
-<!-- +-- acid.py (Run acid test) -->
-<!-- +-- credible_set.py (Credible sets related files) -->
-<!-- +-- data.py (All data generating distribution and dataset downloading) -->
-<!-- +-- forward.py (Forward sampling with TabPFN) -->
-<!-- +-- posterior.py (Compute all type of posteriors) -->
-<!-- +-- plot.py (Generate plots) -->
-<!-- +-- table.py (Generate tables) -->
-<!-- +-- utils.py (Utility functions) -->
-<!-- ``` -->
+### The workflow
+Due to computational constraints, the workflow for the coverage experiment is
+organised into two scripts:
+- `run-rollout.py`: Start an experiment by running TabMGP forward sampling steps
+  and save them into an output directory. It also saves the dataset used for the
+  experiments.
+- `run-posterior.py`: Take the output directory from `run-rollout.py` as input.
+  It reads the dataset and the forward samples of TabMGP, and computes the
+  posterior of TabMGP and all other baselines.
 
-<!-- ### Example -->
-<!-- ```bash -->
-<!-- python forward.py data_size=20 recursion_length=500 n_estimators=8 resample_x=bb dgp=regression-fixed -->
-<!-- ``` -->
-<!-- This will run forward sampling for TabPFN and save the samples in a folder "output/name-of-sample-folder". -->
+These scripts take in arguments which are managed by
+[`hydra`](https://hydra.cc/), with the default arguments given in the `conf`
+folder. For example:
 
-<!-- ``` bash -->
-<!-- python posterior.py expdir="output/name-of-sample-folder" -->
-<!-- ``` -->
-<!-- This will compute all martingale posterior (TabMGP, BB, Copula) and Bayes. This has to be run after running `forward.py`. -->
+``` bash
+python run-rollout.py date="2025-06-99" dgp=regression-fixed seed=1001
+```
 
+It will run forward sampling with TabPFN and save both the forward samples and
+the dataset to `./outputs/2025-06-99/name=regression-fixed dim_x=10
+resample_x=bb data=20 seed=1001`. Then,
+
+``` bash
+python run-posterior.py "expdir='./outputs/2025-06-99/name=regression-fixed dim_x=10
+resample_x=bb data=20 seed=1001'"
+```
+
+will read from this directory and compute the actual TabMGP and posteriors from
+other baselines.
+
+### Environment setup
+A requirements file `requirements-experiment.txt` is provided for convenience. We
+suggest a CPU version of `jax` for running `run-rollout.py` to avoid GPU
+conflicts with PyTorch. The `run-posterior.py` script doesn't require PyTorch and
+a GPU version of `jax` is preferable here.
+
+### Configuration of the coverage experiment
+The shell script `run-experiments.sh` has the exact configuration and command to
+compute the posteriors used in the paper. It does 3 things:
+1. Runs `run-rollout.py` over 30 setups, 100 repetitions for each setup, for the
+   coverage experiment.
+2. Runs `run-rollout.py` on 2 setups, each with 6 different sizes of training
+   set, for the concentration experiment.
+3. Runs `run-posterior.py` on all the output directories produced by
+   `run-rollout.py`. It only computes the trace plots for one repetition in each
+   setup, i.e., any repetition with seed of 1001.
+
+
+### Computation time
+The script for forward sampling `run-rollout.py` is the most computationally
+intensive. In general it takes 60-100 seconds to complete a forward sampling of
+500 steps on an Nvidia L40s. By default, the script will run forward sampling 100
+times sequentially to get 100 TabMGP samples. For our coverage experiment we run
+100 repetitions over 30 setups. It took roughly 7200 GPU-hours to run just
+`run-rollout.py` alone on an Nvidia L40s.
+
+Subsequent posterior computation with `run-posterior.py` is relatively fast and
+can be done in a few hours on GPUs (or 1-2 days on CPUs). The main bottleneck of
+this script is the copula-based baseline.
+
+
+### The acid test
+We also have a script to compute acid-related objects.
+
+- `run-acid.py`: Take the output directory from `run-rollout.py` as input. It
+  reads the dataset and computes all objects required for acid tests.
+
+
+### File structure
+```
++-- run-experiments.sh (a bash script to compute all posteriors in the paper. All outputs are saved in the `outputs` folder.)
++-- run-rollout.py (main script to perform forward sampling of TabMGP for all the experiments)
++-- run-posterior.py (main script to actually compute posteriors (TabMGP and other baselines) for all the experiments)
+
++-- pr_copula (the copula-based martingale posterior from https://github.com/edfong/MP with a bug fix)
++-- baseline.py (all definitions of baseline methods, e.g. standard Bayes, Bayesian bootstrap, copula)
++-- credible_set.py (helper functions for constructing credible sets and coverage)
++-- dgp.py (helper functions that define data generating process)
++-- functional.py (helper functions of all functionals, e.g. MLE estimators)
++-- optimizer.py (a collection of gradient-based optimisers, including L-BFGS)
++-- preprocessor.py (helper functions to clean up data and drop collinear features)
++-- rollout.py (functions that define TabMGP predictive rules)
++-- utils.py (miscellaneous utility functions)
+
++-- plot_settings.py (some constants useful for reproducing tables and plots in the paper)
++-- plot.py (script for generating plots in the paper)
++-- table.py (script for generating tables in the paper)
+
++-- run-acid.py (an optional script to compute objects for the acid test)
+```

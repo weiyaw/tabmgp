@@ -11,7 +11,7 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 import utils
-from data import (
+from dgp import (
     OPENML_BINARY_CLASSIFICATION,
     OPENML_CLASSIFICATION,
     OPENML_REGRESSION,

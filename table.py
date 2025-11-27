@@ -22,10 +22,13 @@ from functional import (
 )
 
 from experiment_setup import load_experiment, get_experiment_paths
+from plot_settings import DATES
 
+from optimizer import Diagnostics, OptResult
 
 from credible_set import (
     joint_credible_set,
+    joint_confidence_set_asymptotic,
     coverage_probability,
     marginal_credible_interval,
     marginal_coverage,
@@ -93,18 +96,33 @@ def get_coverage_given_posterior(posteriors, cov_type, alpha, true_value):
     return rate, radius, post_cov_trace, post_cov_rank
 
 
+def get_coverage_clt_confidence_set(
+    functional, all_train_data, init_theta, alpha, true_value
+):
+    """
+    functional: functional object with minimize_loss and loss methods
+    alpha: confidence level (Type 1 error)
+    true_value: 1D array representing the true parameter value
+    """
+    crs = [
+        joint_confidence_set_asymptotic(functional, train_data, init_theta, alpha)
+        for train_data in all_train_data
+    ]
+    rate, in_out = coverage_probability(crs, true_value)
+    radius = np.asarray([cr["radius"] for cr in crs])
+    post_cov_trace = np.asarray([cr["trace"] for cr in crs])
+    post_cov_rank = np.asarray([cr["cov_rank"] for cr in crs])
+
+    return rate, radius, post_cov_trace, post_cov_rank
+
+
 def get_posterior_details(post_key):
-    # post_key: gibbs, bb-x, tabpfn-x, copula-x
-    if post_key == "gibbs":
-        return {"post_name": "gibbs", "T": -1}
-    elif (
-        post_key.startswith("bb-")
-        or post_key.startswith("tabpfn-")
-        or post_key.startswith("copula-")
-    ):
-        return {"post_name": post_key.split("-")[0], "T": int(post_key.split("-")[1])}
+    # post_key: gibbs, gibbs-eb, bb-x, tabpfn-x, copula-x
+
+    if match := re.match(r"(.+)-(\d+)", post_key):
+        return {"post_name": match.group(1), "T": int(match.group(2))}
     else:
-        raise ValueError("Unknown posterior name")
+        return {"post_name": post_key, "T": -1}
 
 
 def get_algo_success_rate(diagnostic_ls):
@@ -153,13 +171,13 @@ for date in DATES:
 
     rank_x_ls = [np.linalg.matrix_rank(data["x"]) for data in all_train_data]
 
-    for post_name, posterior in all_posterior.items():
-        # For each type of posterior
-        for alpha in [0.05, 0.2]:
-            # For each alpha
+    for alpha in [0.05, 0.2]:
+        # For each alpha
+        for post_name, posterior in all_posterior.items():
+            # For each type of posterior
             post_details = get_posterior_details(post_name)
-            cov_type = "ellipsoid" if post_details["post_name"] == "gibbs" else "diag"
-            rate, radius, post_cov_trace, post_cov_rank = get_coverage_given_posterior(
+            cov_type = "ellipsoid" if post_name.startswith("gibbs") else "diag"
+            rate, _, post_cov_trace, post_cov_rank = get_coverage_given_posterior(
                 posterior, cov_type, alpha, theta_true
             )
             algo_rate = get_algo_success_rate(all_diagnostics[post_name])
@@ -186,6 +204,30 @@ for date in DATES:
             }
             print(row)
             rows.append(row)
+
+        # CLT-based confidence set
+        rate, _, post_cov_trace, post_cov_rank = get_coverage_clt_confidence_set(
+            functional, all_train_data, theta_true, alpha, theta_true
+        )
+        row = {
+            "data": get_data_name(all_paths[0]),
+            "functional": get_functional(functional),
+            "post_name": "clt",
+            "rate": format_decimal(rate, 2),
+            "ideal_rate": 1 - alpha,
+            "post_cov_trace_mean": format_decimal(np.mean(post_cov_trace), 4),
+            "post_cov_trace_median": format_decimal(np.median(post_cov_trace), 4),
+            "post_cov_trace_q3": format_decimal(
+                np.quantile(post_cov_trace, 0.75), 4
+            ),
+            "dim_theta": dim_theta,
+            "post_cov_rank_mean": format_decimal(np.mean(post_cov_rank), 2),
+            "training_set_size": get_data_size(all_paths[0]),
+            "dim_x": dim_x,
+            "date": get_date_part(all_paths[0]),
+        }
+        print(row)
+        rows.append(row)
 
 # flag all rows that are either Gibbs or have the maximum T
 df = pd.DataFrame(rows)

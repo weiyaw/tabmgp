@@ -13,9 +13,9 @@ from jaxtyping import Array, ArrayLike
 from omegaconf import DictConfig, OmegaConf
 
 import baseline
+from baseline import copula_classification, copula_cregression
 import optimizer
 import utils
-from copula import copula_classification, copula_cregression
 
 from functional import (
     LogisticRegression,
@@ -71,20 +71,18 @@ def main(cfg: DictConfig):
     dgp = utils.read_from(f"{path}/dgp.pickle")
     # experiment = load_experiment(path, cfg.loss)
 
-    preprocessor, functional, theta_true, processed_data = load_experiment(
-        path, cfg.loss
-    )
+    preprocessor, functional, theta_true, train_data = load_experiment(path, cfg.loss)
 
     logging.info(f"dim_theta: {theta_true.size}")
 
     # no rows are dropped during encoding/scaling
-    n_train = utils.get_n_data(processed_data)
+    n_train = utils.get_n_data(train_data)
 
-    mle, mle_opt = functional.minimize_loss(processed_data, theta_true, None)
+    mle, mle_opt = functional.minimize_loss(train_data, theta_true, None)
     if hasattr(mle_opt, "success") and not mle_opt.success:
         # Backup optimizer
         logging.info("Optimization failed. MLE might be wrong. Use scipy.")
-        mle = optimizer.scipy_mle(functional.loss, processed_data, theta_true)
+        mle = optimizer.scipy_mle(functional.loss, train_data, theta_true)
     init_theta = mle
 
     key = jax.random.key(cfg.seed)
@@ -134,7 +132,7 @@ def main(cfg: DictConfig):
         start = timer()
         bb_key, subkey = jax.random.split(bb_key)
         bb_full_rollout = baseline.bootstrap_many_samples(
-            subkey, processed_data, cfg.bb_rollout_times, cfg.bb_rollout_length
+            subkey, train_data, cfg.bb_rollout_times, cfg.bb_rollout_length
         )
         bb_T = cfg.bb_rollout_length
         logging.info(f"Shape of BB rollout: {utils.tree_shape(bb_full_rollout)}")
@@ -243,10 +241,24 @@ def main(cfg: DictConfig):
         logging.info("Run untempered Gibbs posterior")
         start = timer()
         nuts_key, subkey = jax.random.split(nuts_key)
+        prior_mean = jnp.zeros_like(init_theta)
+        prior_cov = jnp.eye(len(init_theta)) * 10**2
+        if cfg.gibbs_eb:
+            # Empirical Bayes: Estimate prior mean and variance
+            prior_mean = init_theta
+            H = jax.hessian(functional.loss, argnums=1)(train_data, init_theta, None)
+            prior_cov = jnp.linalg.inv(H)
+
+        logging.info(f"Prior mean: {np.array(prior_mean)}")
+        logging.info(f"Prior variance: {np.diag(prior_cov)}")
+
+        def log_prior(theta):
+            return jax.scipy.stats.multivariate_normal.logpdf(
+                theta, mean=prior_mean, cov=prior_cov
+            )
 
         def log_posterior(theta):
-            log_prior = jnp.sum(jax.scipy.stats.norm.logpdf(theta, scale=10))
-            return -functional.loss(processed_data, theta, None) + log_prior
+            return -functional.loss(train_data, theta, None) + log_prior(theta)
 
         mcmc_init_theta = init_theta
         samples, nuts_state = baseline.nuts_with_adapt(
@@ -262,9 +274,15 @@ def main(cfg: DictConfig):
         diagnostics = optimizer.Diagnostics(
             success=nuts_state["acceptance_rate"], state=nuts_state
         )
-        utils.write_to(
-            f"{savedir}/gibbs-post.pickle", (samples, diagnostics), verbose=True
-        )
+
+        if cfg.gibbs_eb:
+            utils.write_to(
+                f"{savedir}/gibbs-eb-post.pickle", (samples, diagnostics), verbose=True
+            )
+        else:
+            utils.write_to(
+                f"{savedir}/gibbs-post.pickle", (samples, diagnostics), verbose=True
+            )
         logging.info(f"Diagnostics: {np.mean(diagnostics.success):.2f}")
         logging.info(f"Gibbs posterior: {timer() - start:.2f} seconds")
 

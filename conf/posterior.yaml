@@ -17,6 +17,7 @@ bb_rollout_times: 100         # number of posterior samples
 bb_rollout_length: 2000       # forward recurse for how long
 
 # Gibbs posterior (NUTS sampler)
+gibbs_eb: false                # empirical Bayes (prior with MLE and asymptotic covariance)
 gibbs_step_size: 1e-3
 gibbs_n_warmup: 1000            # warmup per chain
 gibbs_n_samples: 2000           # samples per chain

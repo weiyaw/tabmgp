@@ -5,6 +5,7 @@ import numpy as np
 from jax import vmap
 
 from functools import partial
+from scipy.stats import chi2
 
 
 @partial(jax.jit, static_argnames=["cov_type"])
@@ -45,18 +46,38 @@ def joint_credible_set(samples, alpha, cov_type="ellipsoid"):
     sq_dist = vmap(mahalanobis_sq, (0, None, None))(samples, mu, cov)
 
     # Find the critical value
-    radius = jnp.quantile(sq_dist, 1 - alpha)
+    radius = jnp.sqrt(jnp.quantile(sq_dist, 1 - alpha))
 
     return {
         "mu": mu,
         "cov": cov,
         "cov_rank": cov_rank,
-        "radius": jnp.sqrt(radius),
+        "radius": radius,
         "trace": jnp.sum(cov) if cov.ndim == 1 else jnp.trace(cov),
     }
 
 
-# def mahalanobis_sq(x, mu, var):
+def joint_confidence_set_asymptotic(functional, train_data, init_theta, alpha):
+
+    mu, _ = functional.minimize_loss(train_data, init_theta, None)
+    H = jax.hessian(functional.loss, argnums=1)(train_data, init_theta, None)
+    cov = jnp.linalg.inv(H)
+    cov_rank = jnp.linalg.matrix_rank(cov)
+
+    # Use gammaincinv for JAX (chi2.ppf is missing)
+    # chi2.ppf(q, df) = 2 * gammaincinv(df / 2, q)
+    # radius = jnp.sqrt(2 * gammaincinv(cov_rank / 2, 1 - alpha))
+    radius = jnp.sqrt(chi2.ppf(1 - alpha, df=cov_rank))
+
+    return {
+        "mu": mu,
+        "cov": cov,
+        "cov_rank": cov_rank,
+        "radius": radius,
+        "trace": jnp.sum(cov) if cov.ndim == 1 else jnp.trace(cov),
+    }
+
+
 def mahalanobis_sq(x, mu, cov):
     """
     the most general form
