@@ -1,7 +1,7 @@
-# TabMGP: Martingale Posterior with TabPFN
+# [TabMGP: Martingale Posterior with TabPFN](https://arxiv.org/abs/2510.25154)
 
 Thanks for dropping by! This document is structured to be self-contained for
-each use case listed below.
+each use case listed below. The corresponding paper can be found [here](https://arxiv.org/abs/2510.25154).
 
 ## For Trying Out TabMGP
 
