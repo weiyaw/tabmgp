@@ -74,13 +74,8 @@ def read_from_local(path):
 
 
 def read_from(path):
-    if path.startswith("gs://"):
-        # read from gcs
-        bucket_name, path = path.split("/", 3)[2:]
-        return read_from_gs(bucket_name, path)
-    else:
-        # read from local
-        return read_from_local(path)
+    # read from local
+    return read_from_local(path)
 
 
 def print_dgp(d):
@@ -147,3 +142,33 @@ def get_data_name(path):
             return f"regression-t-{match2.group(1)}"
         return match.group(1)
     return None
+
+
+def get_matching_dirs(directory: str, regex: str) -> list[str]:
+    """
+    Find subdirectories in a given directory that match a regex pattern.
+
+    Args:
+        directory (str): The directory to search in.
+        regex (str): The regular expression pattern to search for in directory names.
+
+    Returns:
+        list[str]: A sorted list of full paths to the matching directories.
+    """
+    matching_dirs = []
+    if os.path.exists(directory):
+        for entry in os.scandir(directory):
+            if entry.is_dir() and re.search(regex, entry.name):
+                matching_dirs.append(entry.path)
+    matching_dirs.sort()
+    return matching_dirs
+
+
+def get_matching_files(directory: str, regex: str) -> list[str]:
+    matching_files = []
+    if os.path.exists(directory):
+        for entry in os.scandir(directory):
+            if entry.is_file() and re.search(regex, entry.name):
+                matching_files.append(entry.path)
+    matching_files.sort()
+    return matching_files

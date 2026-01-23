@@ -1,0 +1,23 @@
+defaults:
+  - dgp: regression-fixed
+  - _self_
+
+n_estimators: 1
+sample_idx: 0
+resolution: 101 # the number of points to evaluate F_n/Q_n
+rollout_length: 1000
+data_size: 25
+rollout_x: "truth"
+seed: 999
+
+id: ${now:%Y-%m-%d}
+lastrun: ${now:%Y-%m-%dT%H:%M:%S%z}
+git: ${githash:}
+
+hydra:
+  run:
+    dir: "./outputs/${id}/cid dgp=${dgp.name} rollout_x=${rollout_x} n_est=${n_estimators} seed=${seed}"
+  sweep:
+    dir: ${hydra.run.dir}
+    subdir: .
+

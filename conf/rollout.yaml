@@ -4,7 +4,6 @@ defaults:
 
 rollout_times: 100 # number of posterior samples/forward rollout
 rollout_length: 500 # how many times to forward recurse, i.e. the number of data to impute
-resample_x: bb # truth or bb
 data_size: 500
 seed: 999
 
@@ -12,13 +11,13 @@ n_estimators: 4
 average_before_softmax: False
 
 
-date: ${now:%Y-%m-%d}
+id: ${now:%Y-%m-%d}
 lastrun: ${now:%Y-%m-%dT%H:%M:%S%z}
 git: ${githash:}
 
 hydra:
   run:
-    dir: "./outputs/${date}/\
+    dir: "./outputs/${id}/\
       ${print_dgp:${dgp}}
       resample_x=${resample_x}
       data=${data_size}

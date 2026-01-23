@@ -16,6 +16,19 @@ warnings.filterwarnings(
 )
 
 
+def assert_ppd_args_shape(x_new, x_prev, y_prev):
+    assert x_new.ndim == 2, "x_new must be 2D array"
+    assert x_prev.ndim == 2, "x_prev must be 2D array"
+    assert y_prev.ndim == 1, "y_prev must be 1D array"
+    assert (
+        x_prev.shape[0] == y_prev.shape[0]
+    ), "x_prev and y_prev must have same number of samples"
+    assert (
+        x_prev.shape[1] == x_new.shape[1]
+    ), "x_prev and x_new must have same number of features"
+    assert y_prev.ndim == 1, "y_prev must be 1D array"
+
+
 class TabPFNRegressorPredRule(TabPFNRegressor):
 
     def __init__(
@@ -42,6 +55,7 @@ class TabPFNRegressorPredRule(TabPFNRegressor):
         y_prev: np.ndarray,
     ) -> np.ndarray:
         # Sample from predictive density
+        assert_ppd_args_shape(x_new, x_prev, y_prev)
         self.fit(x_prev, y_prev)
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -51,28 +65,142 @@ class TabPFNRegressorPredRule(TabPFNRegressor):
             )
             pred_output = self.predict(x_new, output_type="full")
         bardist = pred_output["criterion"]
-        y_new = self.bardist_sample(key, bardist.icdf, pred_output["logits"])
+        logits = pred_output["logits"]  # (m, num_of_bins)
+
+        all_u = jax.random.uniform(key, shape=logits.shape[0])
+
+        y_new = np.array(
+            [bardist.icdf(l, float(u)).cpu() for l, u in zip(logits, all_u)],
+        )
         return np.squeeze(y_new)
 
-    def bardist_sample(
-        self,
-        key: PRNGKeyArray,
-        bardist_icdf: Callable,
-        logits: np.ndarray,
-        t: float = 1.0,
+    def icdf(
+        self, u: np.ndarray, x_new: np.ndarray, x_prev: np.ndarray, y_prev: np.ndarray
     ) -> np.ndarray:
-        """Samples values from the bar distribution. A modified version of
-        https://github.com/PriorLabs/TabPFN/blob/main/src/tabpfn/model/bar_distribution.py#L576
-
-        Temperature t.
         """
-        p_cdf = jax.random.uniform(key, shape=logits.shape[:-1])
-        return np.array(
-            [
-                bardist_icdf(logits[i, :] / t, p).cpu()
-                for i, p in enumerate(p_cdf.tolist())
-            ],
-        )
+        Return inverse CDF of P(Y <= t | X = x_new, x_prev, y_prev) given a
+        value u between [0, 1].
+
+        Parameters
+        ----------
+        u : (p, ) array
+            Values between [0, 1].
+        x_new : (m, d) array
+            Query covariates.
+        x_prev : (n, d) array
+            Historical covariates.
+        y_prev : (n,) array
+            Historical targets.
+
+        Return:
+        -------
+        np.ndarray
+            Inverse CDF values. Each row corresponds to a value of u, and each
+            column corresponds to a value of x_new. Shape: (p, m)
+        """
+        assert_ppd_args_shape(x_new, x_prev, y_prev)
+        self.fit(x_prev, y_prev)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="overflow encountered in cast",
+                category=RuntimeWarning,
+            )
+            pred_output = self.predict(x_new, output_type="full")
+        bardist = pred_output["criterion"]
+        logits = pred_output["logits"]  # (m, num_of_bins)
+
+        all_u = np.atleast_1d(u)
+        assert all_u.ndim == 1, "u must be 1D array"
+
+        # For each u, compute for all x_new
+        results = [[bardist.icdf(l, float(u)).cpu() for l in logits] for u in all_u]
+        return np.array(results)
+
+    def predict_event(
+        self, t: np.ndarray, x_new: np.ndarray, x_prev: np.ndarray, y_prev: np.ndarray
+    ) -> np.ndarray:
+        """
+        Return P(Y <= t | X = x_new, x_prev, y_prev).
+
+        Parameters
+        ----------
+        t : (p, ) array
+            Events of the PPD.
+        x_new : (m, d) array
+            Query covariates.
+        x_prev : (n, d) array
+            Historical covariates.
+        y_prev : (n,) array
+            Historical targets.
+
+        Return:
+        -------
+        np.ndarray
+            P(Y <= t | X = x_new, prev data). Each row corresponds to a value of t, and each column corresponds to a value of x_new.
+            Shape: (p, m)
+        """
+        return self.cdf(t, x_new, x_prev, y_prev)
+
+    def cdf(
+        self,
+        t: np.ndarray,
+        x_new: np.ndarray,
+        x_prev: np.ndarray,
+        y_prev: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Return P(Y <= t | X = x_new, prev data).
+
+        Parameters
+        ----------
+        t : (p, ) array
+            Events of the PPD.
+        x_new : (m, d) array
+            Query covariates.
+        x_prev : (n, d) array
+            Historical covariates.
+        y_prev : (n,) array
+            Historical targets.
+
+        Return:
+        -------
+        np.ndarray
+            P(Y <= t | X = x_new, prev data). Each row corresponds to a value of t, and each column corresponds to a value of x_new.
+            Shape: (p, m)
+        """
+        assert_ppd_args_shape(x_new, x_prev, y_prev)
+        self.fit(x_prev, y_prev)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="overflow encountered in cast",
+                category=RuntimeWarning,
+            )
+            pred_output = self.predict(x_new, output_type="full")
+
+        logits = pred_output["logits"]  # shape: (m, num_of_bins)
+        bardist = pred_output["criterion"]
+
+        # t must be a 1D float array
+        t = np.atleast_1d(t)
+        assert t.ndim == 1 and t.dtype == float
+
+        bardist.borders = bardist.borders.cpu()
+        results = []
+        for single_t in t:
+            # Evaluate the predictive CDF at a single t for each x_new query point.
+            ys = torch.full(
+                (logits.shape[0], 1),
+                float(single_t),
+                dtype=torch.float32,
+            )
+            # cdf returns (m, 1) or (m,), squeeze to ensure (m,)
+            cdf_val = bardist.cdf(logits.cpu(), ys).squeeze(-1)
+            results.append(cdf_val.numpy())
+
+        # Stack to get (p, m)
+        return np.stack(results)
 
 
 class TabPFNClassifierPredRule(TabPFNClassifier):
@@ -100,6 +228,7 @@ class TabPFNClassifierPredRule(TabPFNClassifier):
         x_prev: np.ndarray,
         y_prev: np.ndarray,
     ) -> np.ndarray:
+        assert_ppd_args_shape(x_new, x_prev, y_prev)
         self.fit(x_prev, y_prev)
         probs_new = self.predict_proba(x_new).squeeze()
         idx_new = jax.random.choice(key, a=self.classes_.size, p=probs_new)
@@ -109,6 +238,89 @@ class TabPFNClassifierPredRule(TabPFNClassifier):
         # resampling step.
         y_new = y_new.squeeze() if isinstance(y_new, np.ndarray) else y_new
         return y_new
+
+    def pmf(
+        self,
+        t: np.ndarray,
+        x_new: np.ndarray,
+        x_prev: np.ndarray,
+        y_prev: np.ndarray,
+    ) -> np.ndarray:
+        """Return P(Y = t | X = x_new, prev data).
+
+        Parameters
+        ----------
+        t: (p, ) array
+            Event of the PPD.
+        x_new : (m, d) array
+            Query covariates.
+        x_prev : (n, d) array
+            Historical covariates.
+        y_prev : (n,) array
+            Historical targets.
+
+        Return:
+        -------
+        np.ndarray
+            P(Y = t | X = x_new, prev data). Each row corresponds to a value of t, and each column corresponds to a value of x_new.
+            Shape: (p, m)
+        """
+
+        assert_ppd_args_shape(x_new, x_prev, y_prev)
+        self.fit(x_prev, y_prev)
+
+        # Use logits for higher precision
+        logits = self.predict_logits(x_new)  # shape: (m, num_classes)
+
+        # Convert to float64 for precision
+        logits = logits.astype(np.float64)
+
+        # Compute softmax in float64
+        max_logits = np.max(logits, axis=1, keepdims=True)
+        exp_logits = np.exp(logits - max_logits)
+        probs = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
+
+        # t must be a 1D integer array
+        t = np.atleast_1d(t)
+        assert t.ndim == 1 and t.dtype == int
+
+        def predict_event_single_t(single_t: int) -> np.ndarray:
+            # Create a mask for the class: (num_classes,)
+            matches = self.classes_ == single_t
+            # Dot product selects the column or results in 0 if no match
+            # probs: (m, num_classes), matches: (num_classes,) -> (m,)
+            return np.dot(probs, matches.astype(np.float64))
+
+        event_prob = np.array([predict_event_single_t(ti) for ti in t])
+        return event_prob
+
+    def predict_event(
+        self,
+        t: np.ndarray,
+        x_new: np.ndarray,
+        x_prev: np.ndarray,
+        y_prev: np.ndarray,
+    ) -> np.ndarray:
+        """Return P(Y = t | X = x_new, prev data).
+
+        Parameters
+        ----------
+        t: (p, ) array
+            Event of the PPD.
+        x_new : (m, d) array
+            Query covariates.
+        x_prev : (n, d) array
+            Historical covariates.
+        y_prev : (n,) array
+            Historical targets.
+
+        Return:
+        -------
+        np.ndarray
+            P(Y = t | X = x_new, prev data). Each row corresponds to a value of t, and each column corresponds to a value of x_new.
+            Shape: (p, m)
+        """
+        return self.pmf(t, x_new, x_prev, y_prev)
 
 
 def get_x_new(key: PRNGKeyArray, x: Array) -> Array:
@@ -159,4 +371,3 @@ def forward_sampling(
         y_full[i] = one_step_ahead(subkey, x_new, x_prev, y_prev)
 
     return x_full, y_full
-

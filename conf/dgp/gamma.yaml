@@ -1,3 +1,4 @@
 name: gamma
-gshape: 2.0
-gscale: 2.0
+shape: 2.0
+scale: 2.0
+dim_x: 1 # dummy

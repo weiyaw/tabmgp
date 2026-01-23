@@ -522,7 +522,9 @@ class DGPRegressionFixedDependentError(DGPSyntheticFixed):
     s_small: float
     s_mod: float
 
-    def __init__(self, key: PRNGKeyArray, n: int, dim_x: int, s_small: float, s_mod: float):
+    def __init__(
+        self, key: PRNGKeyArray, n: int, dim_x: int, s_small: float, s_mod: float
+    ):
         self.s_small = s_small
         self.s_mod = s_mod
         super().__init__(key, n, dim_x)
@@ -542,6 +544,29 @@ class DGPRegressionFixedDependentError(DGPSyntheticFixed):
         )
         mean = x_train @ self.beta0
         y_train = mean + std * jax.random.normal(y_key, shape=(n,))
+        return {
+            "x": np.asarray(x_train, dtype=np.float64),
+            "y": np.asarray(y_train, dtype=np.float64),
+        }
+
+
+class DGPGamma(DGPSyntheticFixed):
+    """
+    Draw data from a Gamma distribution. x is dummy. 
+    """
+
+    shape: float
+    scale: float
+
+    def __init__(self, key: PRNGKeyArray, n: int, dim_x: int, shape: float, scale: float):
+        self.shape = shape
+        self.scale = scale
+        super().__init__(key, n, dim_x)
+
+    def get_data(self, key: PRNGKeyArray, n: int) -> dict[str, np.ndarray]:
+        key, x_key, y_key = jax.random.split(key, 3)
+        x_train = self.get_x_data(x_key, n)  # this is dummy
+        y_train = jax.random.gamma(y_key, self.shape, shape=(n,)) * self.scale
         return {
             "x": np.asarray(x_train, dtype=np.float64),
             "y": np.asarray(y_train, dtype=np.float64),
@@ -905,4 +930,3 @@ def load_dgp(cfg, data_key: PRNGKeyArray) -> DGP:
     else:
         raise NotImplementedError(f"DGP {cfg.dgp.name} not implemented")
     return dgp
-

@@ -109,7 +109,7 @@ These scripts take in arguments which are managed by
 folder. For example:
 
 ``` bash
-python run-rollout.py date="2025-06-99" dgp=regression-fixed seed=1001
+python run-rollout.py id="2025-06-99" dgp=regression-fixed seed=1001
 ```
 
 It will run forward sampling with TabPFN and save both the forward samples and
