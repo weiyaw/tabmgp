@@ -67,7 +67,10 @@ class TabPFNRegressorPredRule(TabPFNRegressor):
         bardist = pred_output["criterion"]
         logits = pred_output["logits"]  # (m, num_of_bins)
 
-        all_u = jax.random.uniform(key, shape=logits.shape[0])
+        EPS = 1e-5
+        all_u = jax.random.uniform(
+            key, shape=logits.shape[0], minval=EPS, maxval=1 - EPS
+        )  # icdf doesn't like u that are too close to 0 and 1
 
         y_new = np.array(
             [bardist.icdf(l, float(u)).cpu() for l, u in zip(logits, all_u)],

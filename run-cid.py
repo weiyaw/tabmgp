@@ -214,7 +214,6 @@ def main(cfg: DictConfig):
     dgp_name = cfg.dgp.name
     dim_x = cfg.dgp.dim_x
 
-
     torch.set_num_threads(1)
 
     savedir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
@@ -254,9 +253,11 @@ def main(cfg: DictConfig):
     if dgp_name == "regression-fixed" or dgp_name == "gamma":
         pred_rule = TabPFNRegressorPredRule([False] * dim_x, n_estimators, False)
         t = np.linspace(y_init.min(), y_init.max(), 100)
+        u = np.linspace(0.01, 0.99, 99)
     elif dgp_name == "classification-fixed":
         pred_rule = TabPFNClassifierPredRule([False] * dim_x, n_estimators, False)
         t = np.array([0, 1])
+        u = None
 
     x_new = np.tile(np.linspace(-1, 1, 5)[:, None], (1, dim_x))
     assert x_new.ndim == 2 and t.ndim == 1
@@ -269,6 +270,11 @@ def main(cfg: DictConfig):
 
     n_points = np.rint(np.linspace(n0, n0 + rollout_length, resolution)).astype(int)
     logging.info(f"Number of n_points: {len(n_points)}")
+
+    utils.write_to(
+        f"{savedir}/data.pickle",
+        {"x_init": x_init, "y_init": y_init, "n": n_points, "t": t, "u": u},
+    )
 
     key_sample = jr.fold_in(key_sample, sample_idx)
     save_path = savedir / f"sample-{sample_idx}"
@@ -283,7 +289,6 @@ def main(cfg: DictConfig):
     compute_Fn(pred_rule, x_rollout, y_rollout, x_new, t, n_points, save_path)
 
     if isinstance(pred_rule, TabPFNRegressorPredRule):
-        u = np.linspace(0.01, 0.99, 99)
         compute_Qn(pred_rule, x_rollout, y_rollout, x_new, u, n_points, save_path)
     logging.info(f"sample-{sample_idx}: {timer() - start:.2f} secs")
 

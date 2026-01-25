@@ -16,7 +16,7 @@ git: ${githash:}
 
 hydra:
   run:
-    dir: "./outputs/${id}/cid dgp=${dgp.name} rollout_x=${rollout_x} n_est=${n_estimators} seed=${seed}"
+    dir: "./outputs/${id}/cid dgp=${dgp.name} n0=${data_size} rollout_x=${rollout_x} n_est=${n_estimators} seed=${seed}"
   sweep:
     dir: ${hydra.run.dir}
     subdir: .
