@@ -22,3 +22,7 @@ blackjax
 
 # for optimizer
 optax
+
+# for plotting
+seaborn
+matplotlib

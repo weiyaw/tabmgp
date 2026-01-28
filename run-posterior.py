@@ -245,7 +245,7 @@ def main(cfg: DictConfig):
         prior_cov = jnp.eye(len(init_theta)) * 10**2
         if cfg.gibbs_eb:
             # Empirical Bayes: Estimate prior mean and variance
-            prior_mean = init_theta
+            prior_mean = init_theta # this is MLE
             H = jax.hessian(functional.loss, argnums=1)(train_data, init_theta, None)
             prior_cov = jnp.linalg.inv(H)
 

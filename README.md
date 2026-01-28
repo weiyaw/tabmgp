@@ -179,8 +179,10 @@ We also have a script to compute acid-related objects.
 +-- utils.py (miscellaneous utility functions)
 
 +-- plot_settings.py (some constants useful for reproducing tables and plots in the paper)
-+-- plot.py (script for generating plots in the paper)
-+-- table.py (script for generating tables in the paper)
++-- visual-*.py (script for generating plots in the paper)
++-- table.py (script for generating coverage and size and save them in a csv)
++-- table.R (script for formatting tables in the paper)
 
 +-- run-acid.py (an optional script to compute objects for the acid test)
++-- run-cid.py (an optional script to run the cid test)
 ```

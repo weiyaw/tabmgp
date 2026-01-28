@@ -5,6 +5,7 @@ from jax import vmap
 import chex
 import numpy as np
 import pandas as pd
+from scipy.special import gamma
 
 import utils
 from utils import (
@@ -78,6 +79,25 @@ def read_post(path, loss):
                 post_name = match.group(1)
                 posterior[post_name] = utils.read_from(f"{root}/{f}")
     return posterior
+
+
+def get_ellipsoid_volume(A, r):
+    """
+    Calculates volume for (x-c).T @ inv(A) @ (x-c) <= r^2
+    where A is the covariance matrix.
+    """
+    if A.ndim == 1:
+        A = np.diag(A)
+    assert A.ndim == 2
+    n = A.shape[0]
+
+    # Volume of unit hypersphere
+    unit_ball_vol = np.pi ** (n / 2) / gamma(n / 2 + 1)
+
+    # Base volume (when covariance matrix is given)
+    # The volume is proportional to sqrt(det(Cov))
+    base_volume = unit_ball_vol * np.sqrt(np.linalg.det(A))
+    return (r**n) * base_volume
 
 
 def get_coverage_given_posterior(posteriors, cov_type, alpha, true_value):
@@ -217,9 +237,7 @@ for date in DATES:
             "ideal_rate": 1 - alpha,
             "post_cov_trace_mean": format_decimal(np.mean(post_cov_trace), 4),
             "post_cov_trace_median": format_decimal(np.median(post_cov_trace), 4),
-            "post_cov_trace_q3": format_decimal(
-                np.quantile(post_cov_trace, 0.75), 4
-            ),
+            "post_cov_trace_q3": format_decimal(np.quantile(post_cov_trace, 0.75), 4),
             "dim_theta": dim_theta,
             "post_cov_rank_mean": format_decimal(np.mean(post_cov_rank), 2),
             "training_set_size": get_data_size(all_paths[0]),
@@ -241,7 +259,7 @@ df.to_csv("./table/joint-coverage.csv")
 # Marginal credible interval coverage
 
 # Setup the variable name for each dimension of theta
-data_info = pd.read_csv("./data_info.csv")
+data_info = pd.read_csv("./data_info.csv").rename(columns={"name": "data"})
 data_info["theta_name"] = data_info["theta_name"].apply(ast.literal_eval)
 
 ALPHA = 0.05
@@ -251,7 +269,7 @@ for date in DATES:
     print(f"Date: {date}")
     all_paths = get_experiment_paths(f"{output_dir}/{date}")
     data_name = utils.get_data_name(all_paths[0])
-    theta_name = data_info[data_info["name"] == data_name]["theta_name"].iloc[0]
+    theta_name = data_info[data_info["data"] == data_name]["theta_name"].iloc[0]
     _, _, theta_true, _ = load_experiment(all_paths[0], loss=loss)
     dim_theta = theta_true.shape[0]
 

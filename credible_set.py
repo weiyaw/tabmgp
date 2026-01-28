@@ -57,10 +57,60 @@ def joint_credible_set(samples, alpha, cov_type="ellipsoid"):
     }
 
 
+@jax.jit
+def joint_credible_set2(samples, alpha):
+    """
+    Computes the Bayesian sup-t band from posterior draws. See Algorithm 2 of
+    https://doi.org/10.1002/jae.2656
+
+    Args:
+        samples: jnp.array of shape (N_draws, k_parameters) alpha: significance
+        level (e.g., 0.05 for 95% credibility)
+    """
+    n_draws, k_params = samples.shape
+
+    # 1. Define the coverage function for a specific tail probability 'zeta'
+    def get_coverage(zeta):
+        # Compute component-wise equal-tailed intervals
+        lower = jnp.nanpercentile(samples, zeta * 100, axis=0)
+        upper = jnp.nanpercentile(samples, (1 - zeta) * 100, axis=0)
+
+        # Check if each draw is entirely contained within the band
+        # (N_draws, k_params) -> (N_draws,)
+        in_band = jnp.all((samples >= lower) & (samples <= upper), axis=1)
+        return jnp.mean(in_band)
+
+    # 2. Bisection search to find the optimal zeta (calibration)
+    # Search range: between pointwise (alpha/2) and Bonferroni (alpha/(2*k))
+    low, high = alpha / (2 * k_params), alpha / 2.0
+    zeta_star = low
+
+    for _ in range(15):  # 15 iterations is usually enough for high precision
+        mid = (low + high) / 2.0
+        if get_coverage(mid) >= (1 - alpha):
+            zeta_star = mid
+            low = mid  # Try to make the band narrower (larger zeta)
+        else:
+            high = mid  # Make the band wider (smaller zeta)
+
+    # 3. Final Band construction
+    lower_final = jnp.nanpercentile(samples, zeta_star * 100, axis=0)
+    upper_final = jnp.nanpercentile(samples, (1 - zeta_star) * 100, axis=0)
+    width = jnp.mean(upper_final - lower_final)
+
+    return {
+        "mean": mean,
+        "lower": lower_final,
+        "upper": upper_final,
+        "zeta_star": zeta_star,
+        "width": width,
+    }
+
+
 def joint_confidence_set_asymptotic(functional, train_data, init_theta, alpha):
 
-    mu, _ = functional.minimize_loss(train_data, init_theta, None)
-    H = jax.hessian(functional.loss, argnums=1)(train_data, init_theta, None)
+    mu, _ = functional.minimize_loss(train_data, init_theta, None) # ERM
+    H = jax.hessian(functional.loss, argnums=1)(train_data, mu, None)
     cov = jnp.linalg.inv(H)
     cov_rank = jnp.linalg.matrix_rank(cov)
 
