@@ -1,7 +1,7 @@
-# [TabMGP: Martingale Posterior with TabPFN](https://arxiv.org/abs/2510.25154)
+# TabMGP: Martingale Posterior with TabPFN
 
 Thanks for dropping by! This document is structured to be self-contained for
-each use case listed below. The corresponding paper can be found [here](https://arxiv.org/abs/2510.25154).
+each use case listed below.
 
 ## For Trying Out TabMGP
 
@@ -179,7 +179,9 @@ We also have a script to compute acid-related objects.
 +-- utils.py (miscellaneous utility functions)
 
 +-- plot_settings.py (some constants useful for reproducing tables and plots in the paper)
-+-- visual-*.py (script for generating plots in the paper)
++-- visual-acid.py (script for generating the acid partial sum plot)
++-- visual-trace.py (script for generating L1 and trace diagnostic plots of theta)
++-- visual-others.py (script for generating all other plots, e.g., histograms and densities)
 +-- table.py (script for generating coverage and size and save them in a csv)
 +-- table.R (script for formatting tables in the paper)
 
