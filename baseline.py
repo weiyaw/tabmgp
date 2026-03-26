@@ -4,6 +4,11 @@ from typing import Any, Callable
 import jax
 import jax.numpy as jnp
 from jax import vmap, jit
+import time
+import warnings
+
+import torch
+from rollout import TabPFNClassifierPredRule, TabPFNRegressorPredRule
 
 from jaxtyping import Array, ArrayLike, PRNGKeyArray
 
@@ -16,18 +21,21 @@ import utils
 
 from pr_copula.main_copula_regression_conditional import (
     fit_copula_cregression,
-    predictive_resample_cregression,
+    predict_copula_cregression,
 )
+from pr_copula import sample_copula_regression_functions as samp_mvcr
 
 from pr_copula.main_copula_classification import (
     fit_copula_classification,
     predictive_resample_classification,
 )
+from pr_copula import sample_copula_classification_functions as samp_mvcc
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
 from sklearn.compose import ColumnTransformer
 
 jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision for JAX
 ########## COMPETING BAYES METHODS ##########
+
 
 # Bayesian bootstrap
 def bootstrap(
@@ -137,7 +145,6 @@ def nuts_sampler(
     return samples_diag
 
 
-
 # Copula
 class XEncoder(ColumnTransformer):
     def __init__(self, categorical_x: list[bool]):
@@ -206,10 +213,30 @@ def batched_inverse_transform(encoder, batched_X):
     return X_inv_flat.reshape(*batch_dims, -1)
 
 
-def copula_classification(
-    train_data: dict[str, ArrayLike], categorical_x: list[bool], B: int, T: int
+def _copula_init_classification(
+    copula_classification_obj,
+    x: ArrayLike,
+    y: ArrayLike,
+    x_test: ArrayLike,
 ):
+    """Extract logpmf initialization from copula object."""
+    # Use predictive_resample_classification to extract logpmf with shape (1, n, 1)
+    logpmf1_ytest_av, logpmf1_yn_av, _, _, _ = predictive_resample_classification(
+        copula_classification_obj, y, x, x_test, B_postsamples=1, T_fwdsamples=1
+    )
+    # Squeeze batch dimension to match _tabpfn_init_classification shape (n, 1)
+    logpmf1_yn_av = logpmf1_yn_av.squeeze(0)
+    logpmf1_ytest_av = logpmf1_ytest_av.squeeze(0)
+    return logpmf1_yn_av, logpmf1_ytest_av
 
+
+def _copula_classification_impl(
+    train_data: dict[str, ArrayLike],
+    categorical_x: list[bool],
+    B: int,
+    T: int,
+    init_method: str,
+):
     x_encoder = XEncoder(categorical_x).fit(train_data["x"])
     y_encoder = LabelEncoder().fit(train_data["y"])
 
@@ -224,10 +251,29 @@ def copula_classification(
     logging.info("Bandwidth is {}".format(copula_classification_obj.rho_x_opt))
     logging.info("Preq loglik is {}".format(copula_classification_obj.preq_loglik / n))
 
-    # Predict Yplot
-    _, _, y_samp, x_samp, _ = predictive_resample_classification(
-        copula_classification_obj, y, x, x, B_postsamples=B, T_fwdsamples=T
+    if init_method == "copula":
+        logpmf1_yn_av, logpmf1_ytest_av = _copula_init_classification(
+            copula_classification_obj, x, y, x
+        )
+    elif init_method == "tabpfn":
+        logpmf1_yn_av, logpmf1_ytest_av = _tabpfn_init_classification(
+            categorical_x, x, y, x
+        )
+    else:
+        raise ValueError("init_method must be one of {'copula', 'tabpfn'}")
+
+    _, _, y_samp, x_samp, _ = _predictive_resample_classification_with_init(
+        logpmf1_ytest_av,
+        logpmf1_yn_av,
+        y,
+        x,
+        x,
+        copula_classification_obj.rho_opt,
+        copula_classification_obj.rho_x_opt,
+        B_postsamples=B,
+        T_fwdsamples=T,
     )
+
     y_samp = batched_inverse_transform(y_encoder, y_samp.astype(int))
     x_samp = batched_inverse_transform(x_encoder, x_samp)
 
@@ -236,14 +282,91 @@ def copula_classification(
     return recursion_data, copula_classification_obj
 
 
-def copula_cregression(
-    train_data: dict[str, ArrayLike],
-    categorical_x: list[bool],
-    B: int,
-    T: int,
-    y_grid_size: int = 100,
+def copula_classification(
+    train_data: dict[str, ArrayLike], categorical_x: list[bool], B: int, T: int
 ):
+    return _copula_classification_impl(
+        train_data, categorical_x, B, T, init_method="copula"
+    )
 
+
+def _predictive_resample_classification_with_init(
+    logpmf1_ytest_av: ArrayLike,
+    logpmf1_yn_av: ArrayLike,
+    y: ArrayLike,
+    x: ArrayLike,
+    x_test: ArrayLike,
+    rho_opt: ArrayLike,
+    rho_x_opt: ArrayLike,
+    B_postsamples: int,
+    T_fwdsamples: int = 5000,
+    seed: int = 100,
+):
+    key = jax.random.PRNGKey(seed)
+    key, *subkeys = jax.random.split(key, B_postsamples + 1)
+    subkeys = jnp.asarray(subkeys)
+
+    logging.info("Predictive resampling...")
+    start = time.time()
+    logpmf_ytest_samp, logpmf_yn_samp, y_samp, x_samp, pdiff = (
+        samp_mvcc.forward_sample_y_samp_B(
+            subkeys,
+            logpmf1_ytest_av,
+            logpmf1_yn_av,
+            y,
+            x,
+            x_test,
+            rho_opt,
+            rho_x_opt,
+            T_fwdsamples,
+        )
+    )
+    y_samp = y_samp.block_until_ready()
+    end = time.time()
+    logging.info("Predictive resampling time: {}s".format(round(end - start, 3)))
+    return logpmf_ytest_samp, logpmf_yn_samp, y_samp, x_samp, pdiff
+
+
+def _tabpfn_init_classification(
+    categorical_x: list[bool],
+    x_train: ArrayLike,
+    y_train: ArrayLike,
+    x_test: ArrayLike,
+):
+    classifier = TabPFNClassifierPredRule(categorical_x, device="cpu")
+    probs1_yn = classifier.pmf(
+        np.array([1], dtype=int),
+        np.asarray(x_train),
+        np.asarray(x_train),
+        np.asarray(y_train),
+    )[0]
+    probs1_ytest = classifier.pmf(
+        np.array([1], dtype=int),
+        np.asarray(x_test),
+        np.asarray(x_train),
+        np.asarray(y_train),
+    )[0]
+    eps = 1e-10
+    logpmf1_yn_av = jnp.asarray(
+        np.log(np.clip(probs1_yn, eps, 1 - eps))[:, None], dtype=jnp.float64
+    )
+    logpmf1_ytest_av = jnp.asarray(
+        np.log(np.clip(probs1_ytest, eps, 1 - eps))[:, None], dtype=jnp.float64
+    )
+    return logpmf1_yn_av, logpmf1_ytest_av
+
+
+def copula_classification_tabpfn_init(
+    train_data: dict[str, ArrayLike], categorical_x: list[bool], B: int, T: int
+):
+    return _copula_classification_impl(
+        train_data, categorical_x, B, T, init_method="tabpfn"
+    )
+
+
+def _prepare_copula_cregression_inputs(
+    train_data: dict[str, ArrayLike], categorical_x: list[bool], y_grid_size: int
+):
     x_encoder = XEncoder(categorical_x).fit(train_data["x"])
     y_encoder = StandardScaler().fit(train_data["y"][..., np.newaxis])
 
@@ -259,37 +382,32 @@ def copula_cregression(
     ind_y_grid, ind_x_grid = jnp.meshgrid(range_y_pr, range_x_pr, indexing="ij")
     x_pr_grid = x_pr[ind_x_grid.reshape(-1)]
     y_pr_grid = y_pr[ind_y_grid.reshape(-1)]
+    return x_encoder, y_encoder, x, y, x_pr, y_pr, x_pr_grid, y_pr_grid
 
-    n = len(y)
-    copula_cregression_obj = fit_copula_cregression(
-        y, x, single_x_bandwidth=False, n_perm_optim=10, n_perm=10
-    )
-    logging.info("Bandwidth is {}".format(copula_cregression_obj.rho_opt))
-    logging.info("Bandwidth is {}".format(copula_cregression_obj.rho_x_opt))
-    logging.info("Preq loglik is {}".format(copula_cregression_obj.preq_loglik / n))
 
-    logcdf, _ = predictive_resample_cregression(
-        copula_cregression_obj, x, y_pr_grid, x_pr_grid, B_postsamples=B, T_fwdsamples=T
-    )
+def _draw_cregression_samples_from_logcdf(
+    logcdf: Any,
+    y_pr: Any,
+    x_pr: Any,
+    B: int,
+    n_repeat: int = 5,
+    seed: int = 10592,
+):
     logcdf = logcdf.reshape(B, np.shape(y_pr)[0], np.shape(x_pr)[0])
-    logcdf = jnp.moveaxis(logcdf, 1, 2)  # move y to the last axis
+    logcdf = jnp.moveaxis(logcdf, 1, 2)
 
     @jit
     @vmap
     @vmap
-    def icdf(u, logcdf):
-        """
-        Given the logcdf of y_pr and a uniform variate, find the quantile.
-        """
-        log_u = jnp.log(u)  # a uniform
-        return jnp.asarray(y_pr)[jnp.searchsorted(logcdf, log_u)]
+    def icdf(u, logcdf_grid):
+        log_u = jnp.log(u)
+        return jnp.asarray(y_pr)[jnp.searchsorted(logcdf_grid, log_u)]
 
-    U_KEY = jax.random.PRNGKey(10592)
-    subkeys = jax.random.split(U_KEY, 5)  # sample 5 y from each x
+    u_key = jax.random.PRNGKey(seed)
+    subkeys = jax.random.split(u_key, n_repeat)
 
     y_samp = []
     x_samp = []
-    # repeat a few times
     for k in subkeys:
         u = jax.random.uniform(k, (B, np.shape(x_pr)[0]))
         y_samp.append(icdf(u, logcdf))
@@ -297,10 +415,146 @@ def copula_cregression(
 
     y_samp = jnp.concatenate(y_samp, axis=1)
     x_samp = jnp.concatenate(x_samp, axis=1)
+    return y_samp, x_samp
+
+
+def _predictive_resample_cregression_with_init(
+    logcdf: ArrayLike,
+    logpdf: ArrayLike,
+    x: ArrayLike,
+    x_test: ArrayLike,
+    rho_opt: ArrayLike,
+    rho_x_opt: ArrayLike,
+    B_postsamples: int,
+    T_fwdsamples: int = 5000,
+    seed: int = 100,
+):
+    key = jax.random.PRNGKey(seed)
+    key, *subkeys = jax.random.split(key, B_postsamples + 1)
+    subkeys = jnp.asarray(subkeys)
+
+    n = jnp.shape(x)[0]
+    logging.info("Predictive resampling...")
+    start = time.time()
+    logcdf_conditionals_pr, logpdf_joints_pr = (
+        samp_mvcr.predictive_resample_loop_cregression_B(
+            subkeys,
+            logcdf,
+            logpdf,
+            x,
+            x_test,
+            rho_opt,
+            rho_x_opt,
+            n,
+            T_fwdsamples,
+        )
+    )
+    logcdf_conditionals_pr = logcdf_conditionals_pr.block_until_ready()
+    end = time.time()
+    logging.info("Predictive resampling time: {}s".format(round(end - start, 3)))
+    return logcdf_conditionals_pr, logpdf_joints_pr
+
+
+def _tabpfn_init_cregression(
+    categorical_x: list[bool],
+    x_train: ArrayLike,
+    y_train: ArrayLike,
+    x_test: ArrayLike,
+    y_test: ArrayLike,
+):
+    regressor = TabPFNRegressorPredRule(categorical_x, device="cpu")
+    regressor.fit(np.asarray(x_train), np.asarray(y_train))
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="overflow encountered in cast",
+            category=RuntimeWarning,
+        )
+        pred_output = regressor.predict(np.asarray(x_test), output_type="full")
+
+    bardist = pred_output["criterion"]
+    logits = pred_output["logits"]
+    bardist.borders = bardist.borders.cpu()
+
+    y_test_torch = torch.tensor(np.asarray(y_test), dtype=torch.float32)[:, None]
+    logcdf = np.log(bardist.cdf(logits, y_test_torch))
+    logpdf = np.log(bardist.pdf(logits, y_test_torch))
+
+    return (
+        jnp.asarray(logcdf, dtype=jnp.float64),
+        jnp.asarray(logpdf, dtype=jnp.float64)[:, None],
+    )
+
+
+def _copula_cregression_impl(
+    train_data: dict[str, ArrayLike],
+    categorical_x: list[bool],
+    B: int,
+    T: int,
+    y_grid_size: int,
+    init_method: str,
+):
+    x_encoder, y_encoder, x, y, x_pr, y_pr, x_pr_grid, y_pr_grid = (
+        _prepare_copula_cregression_inputs(train_data, categorical_x, y_grid_size)
+    )
+    copula_cregression_obj = fit_copula_cregression(
+        y, x, single_x_bandwidth=False, n_perm_optim=10, n_perm=10
+    )
+    n = len(y)
+    logging.info("Bandwidth is {}".format(copula_cregression_obj.rho_opt))
+    logging.info("Bandwidth is {}".format(copula_cregression_obj.rho_x_opt))
+    logging.info("Preq loglik is {}".format(copula_cregression_obj.preq_loglik / n))
+
+    if init_method == "copula":
+        logcdf_init, logpdf_init = predict_copula_cregression(
+            copula_cregression_obj, y_pr_grid, x_pr_grid
+        )
+    elif init_method == "tabpfn":
+        logcdf_init, logpdf_init = _tabpfn_init_cregression(
+            categorical_x, x, y, x_pr_grid, y_pr_grid
+        )
+    else:
+        raise ValueError("init_method must be one of {'copula', 'tabpfn'}")
+
+    logcdf, _ = _predictive_resample_cregression_with_init(
+        logcdf_init,
+        logpdf_init,
+        x,
+        x_pr_grid,
+        copula_cregression_obj.rho_opt,
+        copula_cregression_obj.rho_x_opt,
+        B_postsamples=B,
+        T_fwdsamples=T,
+    )
+
+    y_samp, x_samp = _draw_cregression_samples_from_logcdf(logcdf, y_pr, x_pr, B)
 
     y_samp = batched_inverse_transform(y_encoder, y_samp[..., np.newaxis])
     x_samp = batched_inverse_transform(x_encoder, x_samp)
-
     recursion_data = {"y": y_samp.squeeze(-1), "x": x_samp}
-
     return recursion_data, copula_cregression_obj
+
+
+def copula_cregression(
+    train_data: dict[str, ArrayLike],
+    categorical_x: list[bool],
+    B: int,
+    T: int,
+    y_grid_size: int = 100,
+):
+    return _copula_cregression_impl(
+        train_data, categorical_x, B, T, y_grid_size, init_method="copula"
+    )
+
+
+def copula_cregression_tabpfn_init(
+    train_data: dict[str, ArrayLike],
+    categorical_x: list[bool],
+    B: int,
+    T: int,
+    y_grid_size: int = 100,
+):
+    return _copula_cregression_impl(
+        train_data, categorical_x, B, T, y_grid_size, init_method="tabpfn"
+    )

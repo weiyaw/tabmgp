@@ -36,6 +36,7 @@ class TabPFNRegressorPredRule(TabPFNRegressor):
         categorical_x: list[bool],
         n_estimators: int = 8,  # this is the default in 2.0.6
         average_before_softmax: bool = False,
+        device: str = "auto",
     ):
         categorical_features_indices = [i for i, c in enumerate(categorical_x) if c]
         super().__init__(
@@ -45,6 +46,7 @@ class TabPFNRegressorPredRule(TabPFNRegressor):
             categorical_features_indices=categorical_features_indices,
             fit_mode="low_memory",
             model_path="tabpfn-v2-regressor.ckpt",
+            device=device,
         )
 
     def sample(
@@ -213,6 +215,7 @@ class TabPFNClassifierPredRule(TabPFNClassifier):
         categorical_x: list[bool],
         n_estimators: int = 4,  # this is the default in 2.0.6
         average_before_softmax: bool = False,
+        device: str = "auto",
     ):
         categorical_features_indices = [i for i, c in enumerate(categorical_x) if c]
         super().__init__(
@@ -222,6 +225,7 @@ class TabPFNClassifierPredRule(TabPFNClassifier):
             categorical_features_indices=categorical_features_indices,
             fit_mode="low_memory",
             model_path="tabpfn-v2-classifier.ckpt",
+            device=device,
         )
 
     def sample(

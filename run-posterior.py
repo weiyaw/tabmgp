@@ -14,6 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 
 import baseline
 from baseline import copula_classification, copula_cregression
+from baseline import copula_classification_tabpfn_init, copula_cregression_tabpfn_init
 import optimizer
 import utils
 
@@ -170,7 +171,15 @@ def main(cfg: DictConfig):
 
     # Copula
     if cfg.copula:
-        logging.info("Run Bivariate Copula.")
+        use_copula_tabpfn = cfg.copula_tabpfn
+        post_name = "copula-tabpfn" if use_copula_tabpfn else "copula"
+        copula_label = (
+            "Bivariate Copula with TabPFN initialization"
+            if use_copula_tabpfn
+            else "Bivariate Copula"
+        )
+
+        logging.info(f"Run {copula_label}.")
         start = timer()
         copula_T = cfg.copula_rollout_length
         copula_B = cfg.copula_rollout_times
@@ -183,29 +192,52 @@ def main(cfg: DictConfig):
             copula_T % copula_freq == 0
         ), "Copula trace will not have the final logcdf/logpdf. Adjust resolution."
 
-        # assert False, "need to use scaled dataset but without throwing away collinear data"
         if hasattr(dgp, "categorical_x"):
             categorical_x = dgp.categorical_x
         else:
             categorical_x = [False] * dgp.train_data["x"].shape[-1]
 
         if isinstance(functional, LinearRegression):
-            copula_full_rollout, copula_obj = copula_cregression(
-                dgp.train_data, categorical_x, copula_B, copula_T, copula_num_y_grid
-            )
+            if use_copula_tabpfn:
+                copula_full_rollout, copula_obj = copula_cregression_tabpfn_init(
+                    dgp.train_data,
+                    categorical_x,
+                    copula_B,
+                    copula_T,
+                    copula_num_y_grid,
+                )
+            else:
+                copula_full_rollout, copula_obj = copula_cregression(
+                    dgp.train_data,
+                    categorical_x,
+                    copula_B,
+                    copula_T,
+                    copula_num_y_grid,
+                )
 
         elif isinstance(functional, LogisticRegression) and functional.n_classes == 2:
-            copula_full_rollout, copula_obj = copula_classification(
-                dgp.train_data, categorical_x, copula_B, copula_T
-            )
+            if use_copula_tabpfn:
+                copula_full_rollout, copula_obj = copula_classification_tabpfn_init(
+                    dgp.train_data, categorical_x, copula_B, copula_T
+                )
+            else:
+                copula_full_rollout, copula_obj = copula_classification(
+                    dgp.train_data, categorical_x, copula_B, copula_T
+                )
 
         elif isinstance(functional, LogisticRegression) and functional.n_classes > 2:
-            logging.info("Copula not available for multiclass classification.")
+            if use_copula_tabpfn:
+                logging.info(
+                    "Copula with TabPFN initialization not available for multiclass classification."
+                )
+            else:
+                logging.info("Copula not available for multiclass classification.")
             copula_full_rollout = None
         else:
             raise NotImplementedError
+
         jax.block_until_ready(copula_full_rollout)
-        logging.info(f"Copula rollout: {timer() - start:.2f} seconds")
+        logging.info(f"{copula_label} rollout: {timer() - start:.2f} seconds")
 
         if copula_full_rollout is not None:
             copula_full_rollout = preprocessor.encode_data(copula_full_rollout)
@@ -215,10 +247,14 @@ def main(cfg: DictConfig):
                 rollout_subset = truncate_rollout(copula_full_rollout, n_train + T)
                 copula_post = functional.get_mgp(rollout_subset, init_theta)
                 utils.write_to(
-                    f"{savedir}/copula-{T}-post.pickle", copula_post, verbose=True
+                    f"{savedir}/{post_name}-{T}-post.pickle",
+                    copula_post,
+                    verbose=True,
                 )
                 logging.info(f"Diagnostics: {np.mean(copula_post[1].success)}")
-                logging.info(f"Copula posterior ({T}): {timer() - start:.2f} seconds")
+                logging.info(
+                    f"{copula_label} posterior ({T}): {timer() - start:.2f} seconds"
+                )
 
             if cfg.trace and isinstance(functional, LogisticRegression):
                 start = timer()
@@ -230,11 +266,11 @@ def main(cfg: DictConfig):
                     freq=copula_freq,
                 )
                 utils.write_to(
-                    f"{savedir}/copula-{n_train}-{copula_T + n_train}-{copula_freq}-trace.pickle",
+                    f"{savedir}/{post_name}-{n_train}-{copula_T + n_train}-{copula_freq}-trace.pickle",
                     copula_trace,
                     verbose=True,
                 )
-                logging.info(f"Copula trace: {timer() - start:.2f} seconds")
+                logging.info(f"{copula_label} trace: {timer() - start:.2f} seconds")
 
     # Gibbs posterior (NUTS)
     if cfg.gibbs:
