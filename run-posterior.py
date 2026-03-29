@@ -28,7 +28,7 @@ from experiment_setup import load_experiment
 jax.config.update("jax_enable_x64", True)
 
 # Evaluate martingale posterior with these many numbers of forward samples
-EVAL_T = [250, 500, 1000, 2000, 3000, 4000, 5000]
+EVAL_T = [250, 500, 750, 1000, 2000, 3000, 4000, 5000]
 
 # These are the magic numbers to reproduce the same key from the seed
 BB_KEY = 49195

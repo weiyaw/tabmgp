@@ -41,6 +41,23 @@ for seed in {1001..1100}; do
 done
 
 
+# Check for convergence with larger rollout length (1000)
+python run-rollout.py id="2025-09-51" data_size=50 rollout_length=1000 n_estimators=4 dgp=openml dgp.name=skin seed=${seed}
+python run-rollout.py id="2025-09-52" data_size=200 rollout_length=1000 n_estimators=4 dgp=openml dgp.name=yeast seed=${seed}
+python run-rollout.py id="2025-09-53" data_size=200 rollout_length=1000 n_estimators=4 dgp=openml dgp.name=wine seed=${seed}
+python run-rollout.py id="2025-09-01" data_size=100 rollout_length=1000 n_estimators=4 dgp=classification-fixed-gmm dgp.a=0 seed=${seed}
+python run-rollout.py id="2025-09-02" data_size=100 rollout_length=1000 n_estimators=4 dgp=classification-fixed-gmm dgp.a=-1 seed=${seed}
+python run-rollout.py id="2025-09-03" data_size=100 rollout_length=1000 n_estimators=4 dgp=classification-fixed-gmm dgp.a=-2 seed=${seed}
+
+
+# Check the coverage with larger rollout length (1000)
+for seed in {1001..1050}; do
+    python run-rollout.py id="2025-09-01" data_size=100 rollout_length=1000 n_estimators=4 dgp=classification-fixed-gmm dgp.a=0 seed=${seed}
+    python run-rollout.py id="2025-09-51" data_size=50 rollout_length=1000 n_estimators=4 dgp=openml dgp.name=skin seed=${seed}
+    python run-rollout.py id="2025-09-52" data_size=200 rollout_length=1000 n_estimators=4 dgp=openml dgp.name=yeast seed=${seed}
+    python run-rollout.py id="2025-09-53" data_size=200 rollout_length=1000 n_estimators=4 dgp=openml dgp.name=wine seed=${seed}
+done
+
 # concentration experiment, start with data_size=50, 100, 150, 200, 250, 300
 for data_size in 50 100 150 200 250 300; do
     python run-rollout.py id="2025-06-11" data_size=${data_size} dgp=classification-fixed seed=1001
@@ -58,10 +75,12 @@ while read -r -d $'\0' path; do
     if [ "$seed" = "1001" ]; then
         # For seed 1001, also compute the trace
         python run-posterior.py "expdir='${path}'" "trace=True"
+        python run-posterior.py "expdir='${path}'" "trace=True" "tabpfn=False" "bb=False" "gibbs=True" "gibbs_eb=True" "copula=True" "copula_tabpfn=True"
     fi
 
     if [ "$seed" != "1001" ]; then
         python run-posterior.py "expdir='${path}'" "trace=False"
+        python run-posterior.py "expdir='${path}'" "trace=False" "tabpfn=False" "bb=False" "gibbs=True" "gibbs_eb=True" "copula=True" "copula_tabpfn=True"
     fi
 
 done < <(find "$OUTPUT_PATH" -mindepth 2 -maxdepth 2 -type d -print0 | sort -z -u)
