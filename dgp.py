@@ -183,6 +183,145 @@ def multidim_stratified_split(
 
     return X_train, X_test, y_train, y_test
 
+class DGPSemiReal(DGP):
+    """
+    This is a base class for DGPs that are based on real feature x but synthetic
+    y.  It defines how the population is defined, how new x is drawn from the
+    population, and how the data are split.
+    """
+
+    full_data: dict[str, np.ndarray]
+    test_data: dict[str, np.ndarray]
+    categorical_x: list[bool]
+    strata_bins: int
+
+    def get_population(self) -> dict[str, np.ndarray]:
+        return self.full_data
+
+    def get_x_data(self, key: PRNGKeyArray, n: int) -> Array:
+        if self.full_data is None:
+            raise ValueError("Full data is not available. Cannot sample x.")
+        if "x" not in self.full_data:
+            raise ValueError("Full data does not contain 'x' key.")
+        key, subkey = jax.random.split(key)
+        indices = jax.random.choice(subkey, self.full_data["x"].shape[0], shape=(n,))
+        return self.full_data["x"][indices]
+
+    def split_data(
+        self,
+        key: PRNGKeyArray,
+        n: int,
+        is_y_categorical: bool,
+        continuous_threshold: int | None = None,
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+        x_train, x_test, y_train, y_test = multidim_stratified_split(
+            key,
+            self.full_data["x"],
+            self.full_data["y"],
+            self.categorical_x,
+            is_y_categorical=is_y_categorical,
+            train_size=n,
+            n_bins=self.strata_bins,
+            continuous_threshold=continuous_threshold,
+        )
+        return {"x": x_train, "y": y_train}, {"x": x_test, "y": y_test}
+
+    @abstractmethod
+    def _generate_y(self, key: PRNGKeyArray, x: ArrayLike) -> np.ndarray:
+        pass
+
+
+class DGPSemiRealAbalone(DGPSemiReal):
+    """
+    This DGP uses the Abalone dataset for x, but generates synthetic y using a
+    simple, identifiable MLP model with noise.  The population is defined by the original
+    Abalone dataset, and new x is drawn from the original dataset with
+    replacement.
+    """
+
+    full_data: dict[str, np.ndarray]
+    test_data: dict[str, np.ndarray]
+    categorical_x: list[bool]
+    target_name: str
+    feature_name: list[str]
+    strata_bins: int
+    noise_std: float
+    replication_factor: int
+
+    _sex_to_num = {"I": -1.0, "F": 0.0, "M": 1.0}
+
+    def __init__(
+        self,
+        key: PRNGKeyArray,
+        n: int,
+        strata_bins: int = 1,
+        noise_std: float = 0.15,
+        replication_factor: int = 10,
+        continuous_threshold: int | None = None,
+    ):
+        self.strata_bins = strata_bins
+        self.noise_std = noise_std
+        self.replication_factor = replication_factor
+
+        self.input_key = key
+
+        dataset = openml.datasets.get_dataset(45042)
+        df, _, _, _ = dataset.get_data(dataset_format="dataframe")
+        df.columns = [str(c).lower() for c in df.columns]
+
+        self.feature_name = ["sex", "height", "shucked_weight"]
+        self.target_name = "y_mlp"
+        x_df = df[self.feature_name].copy()
+
+        x_original = np.asarray(x_df)
+        x_columns = np.repeat(x_original, self.replication_factor, axis=0)
+        y_column = self._generate_y(key, x_columns)
+
+        self.categorical_x = [True, False, False]
+        self.full_data = {"x": x_columns, "y": y_column}
+
+        self.train_data, self.test_data = self.split_data(
+            key,
+            n,
+            is_y_categorical=False,
+            continuous_threshold=continuous_threshold,
+        )
+
+        logging.info(
+            "Semi-real Abalone (OpenML 45042), features: sex/height/shucked_weight, replicated x"
+        )
+
+    def _generate_y(self, key: PRNGKeyArray, x: ArrayLike) -> np.ndarray:
+        x = np.asarray(x)
+
+        sex = np.vectorize(lambda s: self._sex_to_num.get(str(s), 0.0))(x[:, 0]).astype(
+            np.float64
+        )
+        height = x[:, 1].astype(np.float64)
+        shucked_weight = x[:, 2].astype(np.float64)
+
+        def zscore(v: np.ndarray) -> np.ndarray:
+            s = np.std(v)
+            if s == 0:
+                return np.zeros_like(v)
+            return (v - np.mean(v)) / s
+
+        x_num = np.column_stack([zscore(sex), zscore(height), zscore(shucked_weight)])
+
+        # 1-hidden-unit MLP gives a simple, identifiable nonlinear signal.
+        w1 = np.array([0.9, -1.1, 1.4], dtype=np.float64)
+        b1 = -0.2
+        w2 = 1.3
+        b2 = 0.4
+        hidden = np.tanh(x_num @ w1 + b1)
+        signal = w2 * hidden + b2
+
+        _, noise_key = jax.random.split(key)
+        noise = np.asarray(
+            jax.random.normal(noise_key, shape=(x_num.shape[0],)), dtype=np.float64
+        )
+        return signal + self.noise_std * noise
+
 
 class DGPReal(DGP):
     """
@@ -774,6 +913,7 @@ class DGPNonNormalErrorWM(DGPWuMartin):
 
 OPENML_REGRESSION = [
     "abalone",
+    "abalone-semireal",
     "airfoil",
     "kin8nm",
     "auction",
@@ -857,6 +997,8 @@ def load_dgp(cfg, data_key: PRNGKeyArray) -> DGP:
         dgp = DGPRegressionOpenML(data_key, cfg.data_size, 44973, -1, 1)
     elif cfg.dgp.name == "abalone":
         dgp = DGPRegressionOpenML(data_key, cfg.data_size, 45042, -1, 1)
+    elif cfg.dgp.name == "abalone-semireal":
+        dgp = DGPSemiRealAbalone(data_key, cfg.data_size, strata_bins=1)
     elif cfg.dgp.name == "fish":
         if cfg.data_size > 50:
             dgp = DGPRegressionOpenML(data_key, cfg.data_size, 44970, -1, 2)
