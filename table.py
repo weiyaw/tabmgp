@@ -32,6 +32,7 @@ from credible_set import (
     joint_confidence_set_asymptotic,
     coverage_probability,
     marginal_credible_interval,
+    marginal_clt_credible_interval,
     marginal_coverage,
 )
 

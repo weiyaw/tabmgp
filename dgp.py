@@ -2,6 +2,7 @@ import logging
 import math
 import os
 from abc import abstractmethod
+from typing import Any
 
 import equinox as eqx
 import jax
@@ -321,6 +322,161 @@ class DGPSemiRealAbalone(DGPSemiReal):
             jax.random.normal(noise_key, shape=(x_num.shape[0],)), dtype=np.float64
         )
         return signal + self.noise_std * noise
+
+
+class DGPSemiRealPhoneme(DGPSemiReal):
+    """
+    Uses the Phoneme dataset (OpenML 1489) for x; generates synthetic y by
+    training an MLP (BN -> [128 -> 64 -> 32] ReLU + Dropout -> sigmoid) on the
+    original class labels, then using the MLP's hard predictions as y.
+
+    The MLP training is entirely deterministic (fixed seeds and hardcoded
+    hyperparameters), so _generate_y always produces the same output for the
+    same x regardless of the key passed to __init__.
+    """
+
+    full_data: dict[str, np.ndarray]
+    test_data: dict[str, np.ndarray]
+    categorical_x: list[bool]
+    target_name: str
+    feature_name: list[str]
+    strata_bins: int
+    replication_factor: int
+    _scaler: Any
+    _mlp_params: Any
+
+    @staticmethod
+    def _build_apply_fn():
+        from jax.example_libraries.stax import BatchNorm, Dense, Dropout, Relu, serial
+        _, apply_fn = serial(
+            BatchNorm(axis=(0,)),
+            Dense(128), Relu, Dropout(0.3),
+            Dense(64),  Relu, Dropout(0.3),
+            Dense(32),  Relu, Dropout(0.3),
+            Dense(1),
+        )
+        return apply_fn
+
+    def __init__(
+        self,
+        key: PRNGKeyArray,
+        n: int,
+        strata_bins: int = 1,
+        replication_factor: int = 1,
+        continuous_threshold: int | None = None,
+    ):
+        import optax
+        from jax.example_libraries.stax import BatchNorm, Dense, Dropout, Relu, serial
+        from sklearn.preprocessing import StandardScaler
+        apply_fn = self._build_apply_fn()
+
+        # Hardcoded training hyperparameters
+        _EPOCHS       = 100
+        _BATCH_SIZE   = 256
+        _LR           = 3e-3
+        _WEIGHT_DECAY = 1e-4
+        _DROPOUT_RATE = 0.3
+        _SEED         = 19068
+
+        self.strata_bins = strata_bins
+        self.replication_factor = replication_factor
+        self.input_key = key
+        self.target_name = "y_mlp"
+
+        # Load Phoneme dataset
+        dataset = openml.datasets.get_dataset(1489)
+        X, y_orig, _, feature_names = dataset.get_data(
+            dataset_format="array",
+            target=dataset.default_target_attribute,
+        )
+        X = X.astype(np.float32)
+        classes = np.unique(y_orig)
+        y_orig = (y_orig == classes[1]).astype(np.float32)
+
+        self.feature_name = (
+            list(feature_names)
+            if feature_names is not None
+            else [f"f{i}" for i in range(X.shape[1])]
+        )
+        self.categorical_x = [False] * X.shape[1]
+
+        # Standardize features
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X).astype(np.float32)
+        self._scaler = scaler
+
+        # Initialise params (init_fn shares the same architecture as _build_apply_fn)
+        init_fn, _ = serial(
+            BatchNorm(axis=(0,)),
+            Dense(128), Relu, Dropout(_DROPOUT_RATE),
+            Dense(64),  Relu, Dropout(_DROPOUT_RATE),
+            Dense(32),  Relu, Dropout(_DROPOUT_RATE),
+            Dense(1),
+        )
+
+        train_rng = jax.random.PRNGKey(_SEED)
+        train_rng, init_rng = jax.random.split(train_rng)
+        _, params = init_fn(init_rng, (-1, X_scaled.shape[1]))
+
+        # Class weights for imbalanced BCE
+        n_total = len(y_orig)
+        n1 = float(y_orig.sum())
+        w1_cls = n_total / (2 * n1)
+        w0_cls = n_total / (2 * (n_total - n1))
+
+        optimizer = optax.adamw(learning_rate=_LR, weight_decay=_WEIGHT_DECAY)
+        opt_state = optimizer.init(params)
+
+        def loss_fn(p, X_b, y_b, rng):
+            logits = apply_fn(p, X_b, rng=rng, mode="train").squeeze(-1)
+            per_sample = optax.sigmoid_binary_cross_entropy(logits, y_b)
+            weights = jnp.where(y_b == 1, w1_cls, w0_cls)
+            return jnp.mean(weights * per_sample)
+
+        @jax.jit
+        def train_step(p, opt_st, X_b, y_b, rng):
+            loss, grads = jax.value_and_grad(loss_fn)(p, X_b, y_b, rng)
+            updates, new_opt_st = optimizer.update(grads, opt_st, p)
+            return optax.apply_updates(p, updates), new_opt_st
+
+        batch_rng = np.random.default_rng(_SEED)
+        for _ in range(_EPOCHS):
+            idx = batch_rng.permutation(len(X_scaled))
+            for start in range(0, len(X_scaled), _BATCH_SIZE):
+                b = idx[start : start + _BATCH_SIZE]
+                train_rng, step_rng = jax.random.split(train_rng)
+                params, opt_state = train_step(
+                    params, opt_state,
+                    jnp.array(X_scaled[b]), jnp.array(y_orig[b]),
+                    step_rng,
+                )
+
+        self._mlp_params = params
+
+        # Build full_data: replicate original (un-scaled) x
+        x_columns = np.repeat(X, self.replication_factor, axis=0)
+        y_column = self._generate_y(key, x_columns)
+
+        self.full_data = {"x": x_columns, "y": y_column}
+        self.train_data, self.test_data = self.split_data(
+            key, n, is_y_categorical=True, continuous_threshold=continuous_threshold
+        )
+
+        logging.info(
+            "Semi-real Phoneme (OpenML 1489), %d features, replicated x",
+            X.shape[1],
+        )
+
+    def _generate_y(self, key: PRNGKeyArray, x: ArrayLike) -> np.ndarray:
+        x_arr = np.asarray(x, dtype=np.float32)
+        x_scaled = self._scaler.transform(x_arr).astype(np.float32)
+        logits = self._build_apply_fn()(
+            self._mlp_params,
+            jnp.array(x_scaled),
+            rng=jax.random.PRNGKey(0),
+            mode="test",
+        ).squeeze(-1)
+        return (np.array(jax.nn.sigmoid(logits)) >= 0.5).astype(np.float32)
 
 
 class DGPReal(DGP):
@@ -927,6 +1083,7 @@ OPENML_REGRESSION = [
 OPENML_BINARY_CLASSIFICATION = [
     "blood",
     "phoneme",
+    "phoneme-semireal",
     "banknote",
     "mozilla",
     "skin",
@@ -1013,6 +1170,8 @@ def load_dgp(cfg, data_key: PRNGKeyArray) -> DGP:
         dgp = DGPClassificationOpenML(data_key, cfg.data_size, 1464, -1, 1)
     elif cfg.dgp.name == "phoneme":
         dgp = DGPClassificationOpenML(data_key, cfg.data_size, 1489, -1, 1)
+    elif cfg.dgp.name == "phoneme-semireal":
+        dgp = DGPSemiRealPhoneme(data_key, cfg.data_size, strata_bins=1)
     elif cfg.dgp.name == "skin":
         dgp = DGPClassificationOpenML(data_key, cfg.data_size, 1502, -1, 3)
     elif cfg.dgp.name == "rice":

@@ -5,7 +5,7 @@ import numpy as np
 from jax import vmap
 
 from functools import partial
-from scipy.stats import chi2
+from scipy.stats import chi2, norm
 
 
 @partial(jax.jit, static_argnames=["cov_type"])
@@ -94,6 +94,7 @@ def joint_credible_set2(samples, alpha):
             high = mid  # Make the band wider (smaller zeta)
 
     # 3. Final Band construction
+    mean = jnp.nanmean(samples, axis=0)
     lower_final = jnp.nanpercentile(samples, zeta_star * 100, axis=0)
     upper_final = jnp.nanpercentile(samples, (1 - zeta_star) * 100, axis=0)
     width = jnp.mean(upper_final - lower_final)
@@ -196,6 +197,23 @@ def marginal_credible_interval(samples, alpha):
     upper = np.quantile(samples, 1 - alpha / 2, axis=0)
     mean = np.mean(samples, axis=0)
     return mean, lower, upper
+
+
+def marginal_clt_credible_interval(functional, train_data, init_theta, alpha):
+    mu, _ = functional.minimize_loss(train_data, init_theta, None)  # ERM
+    H = jax.hessian(functional.loss, argnums=1)(train_data, mu, None)
+    cov = jnp.linalg.inv(H)
+
+    mu = jnp.atleast_1d(mu)
+    if cov.ndim == 0:
+        sd = jnp.sqrt(jnp.clip(cov, a_min=0.0))[None]
+    else:
+        sd = jnp.sqrt(jnp.clip(jnp.diag(cov), a_min=0.0))
+
+    z = norm.ppf(1 - alpha / 2)
+    lower = mu - z * sd
+    upper = mu + z * sd
+    return np.asarray(mu), np.asarray(lower), np.asarray(upper)
 
 
 def marginal_coverage(marginal_ci_ls, theta_true, alpha):

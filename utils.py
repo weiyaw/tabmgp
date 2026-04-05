@@ -164,11 +164,28 @@ def get_matching_dirs(directory: str, regex: str) -> list[str]:
     return matching_dirs
 
 
-def get_matching_files(directory: str, regex: str) -> list[str]:
+def get_matching_files(directory: str, regex: str, recursive: bool = False) -> list[str]:
+    """
+    Find files in a directory whose names match a regex pattern.
+
+    Args:
+        directory (str): Directory to search.
+        regex (str): Regular expression used to match file names.
+        recursive (bool): If True, also search all subdirectories.
+
+    Returns:
+        list[str]: Sorted full paths of matching files.
+    """
     matching_files = []
     if os.path.exists(directory):
-        for entry in os.scandir(directory):
-            if entry.is_file() and re.search(regex, entry.name):
-                matching_files.append(entry.path)
+        if recursive:
+            for root, _, files in os.walk(directory):
+                for filename in files:
+                    if re.search(regex, filename):
+                        matching_files.append(os.path.join(root, filename))
+        else:
+            for entry in os.scandir(directory):
+                if entry.is_file() and re.search(regex, entry.name):
+                    matching_files.append(entry.path)
     matching_files.sort()
     return matching_files
