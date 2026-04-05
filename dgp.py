@@ -479,6 +479,156 @@ class DGPSemiRealPhoneme(DGPSemiReal):
         return (np.array(jax.nn.sigmoid(logits)) >= 0.5).astype(np.float32)
 
 
+class DGPSemiRealConcrete(DGPSemiReal):
+    """
+    Uses the Concrete Compressive Strength dataset (OpenML 4353) for x;
+    generates synthetic y by training an MLP ([64 -> 32] ReLU, linear output)
+    on the original compressive-strength labels, then using the MLP's continuous
+    predictions as y.
+
+    Architecture has no BatchNorm or Dropout — stax Dropout breaks gradient
+    flow on this small dataset; weight decay provides regularisation instead.
+    Training is fully deterministic (fixed seeds), so _generate_y always
+    returns the same output for the same x.
+    """
+
+    full_data: dict[str, np.ndarray]
+    test_data: dict[str, np.ndarray]
+    categorical_x: list[bool]
+    target_name: str
+    feature_name: list[str]
+    strata_bins: int
+    replication_factor: int
+    _x_scaler: Any
+    _y_scaler: Any
+    _mlp_params: Any
+
+    @staticmethod
+    def _build_apply_fn():
+        from jax.example_libraries.stax import Dense, Relu, serial
+        _, apply_fn = serial(
+            Dense(64), Relu,
+            Dense(32), Relu,
+            Dense(1),
+        )
+        return apply_fn
+
+    def __init__(
+        self,
+        key: PRNGKeyArray,
+        n: int,
+        strata_bins: int = 1,
+        replication_factor: int = 1,
+        continuous_threshold: int | None = None,
+    ):
+        import optax
+        from jax.example_libraries.stax import Dense, Relu, serial
+        from sklearn.preprocessing import StandardScaler
+
+        # Hardcoded training hyperparameters (matches train_concrete_mlp.py)
+        _EPOCHS       = 300
+        _BATCH_SIZE   = 64
+        _LR           = 1e-2
+        _WEIGHT_DECAY = 1e-3
+        _SEED         = 42
+
+        self.strata_bins = strata_bins
+        self.replication_factor = replication_factor
+        self.input_key = key
+        self.target_name = "y_mlp"
+
+        # Load Concrete dataset (no default_target_attribute — name explicitly)
+        _TARGET = "Concrete compressive strength(MPa. megapascals)"
+        dataset = openml.datasets.get_dataset(4353)
+        df, _, _, feature_names = dataset.get_data(dataset_format="dataframe")
+        y_orig = df[_TARGET].to_numpy().astype(np.float32)
+        X = df.drop(columns=[_TARGET]).to_numpy().astype(np.float32)
+
+        self.feature_name = (
+            [c for c in df.columns if c != _TARGET]
+            if feature_names is not None
+            else [f"f{i}" for i in range(X.shape[1])]
+        )
+        self.categorical_x = [False] * X.shape[1]
+
+        # Standardise features and target (fit on full dataset)
+        x_scaler = StandardScaler()
+        X_scaled = x_scaler.fit_transform(X).astype(np.float32)
+        self._x_scaler = x_scaler
+
+        y_scaler = StandardScaler()
+        y_scaled = y_scaler.fit_transform(y_orig.reshape(-1, 1)).ravel().astype(np.float32)
+        self._y_scaler = y_scaler
+
+        # Initialise model params
+        init_fn, apply_fn = serial(
+            Dense(64), Relu,
+            Dense(32), Relu,
+            Dense(1),
+        )
+        train_rng = jax.random.PRNGKey(_SEED)
+        train_rng, init_rng = jax.random.split(train_rng)
+        _, params = init_fn(init_rng, (-1, X_scaled.shape[1]))
+
+        # Cosine-decayed AdamW (no Dropout → no rng in train loop)
+        steps_per_epoch = len(X_scaled) // _BATCH_SIZE + 1
+        schedule  = optax.cosine_decay_schedule(_LR, _EPOCHS * steps_per_epoch)
+        optimizer = optax.adamw(learning_rate=schedule, weight_decay=_WEIGHT_DECAY)
+        opt_state = optimizer.init(params)
+
+        def loss_fn(p, X_b, y_b):
+            preds = apply_fn(p, X_b, rng=None, mode="train").squeeze(-1)
+            return jnp.mean((preds - y_b) ** 2)
+
+        @jax.jit
+        def train_step(p, opt_st, X_b, y_b):
+            loss, grads = jax.value_and_grad(loss_fn)(p, X_b, y_b)
+            updates, new_opt_st = optimizer.update(grads, opt_st, p)
+            return optax.apply_updates(p, updates), new_opt_st
+
+        batch_rng = np.random.default_rng(_SEED)
+        for _ in range(_EPOCHS):
+            idx = batch_rng.permutation(len(X_scaled))
+            for start in range(0, len(X_scaled), _BATCH_SIZE):
+                b = idx[start : start + _BATCH_SIZE]
+                params, opt_state = train_step(
+                    params, opt_state,
+                    jnp.array(X_scaled[b]), jnp.array(y_scaled[b]),
+                )
+
+        self._mlp_params = params
+
+        # Build full_data: replicate original (un-scaled) x
+        x_columns = np.repeat(X, self.replication_factor, axis=0)
+        y_column   = self._generate_y(key, x_columns)
+
+        self.full_data = {"x": x_columns, "y": y_column}
+        self.train_data, self.test_data = self.split_data(
+            key, n, is_y_categorical=False, continuous_threshold=continuous_threshold
+        )
+
+        logging.info(
+            "Semi-real Concrete (OpenML 4353), %d features, replicated x",
+            X.shape[1],
+        )
+
+    def _generate_y(self, key: PRNGKeyArray, x: ArrayLike) -> np.ndarray:
+        x_arr    = np.asarray(x, dtype=np.float32)
+        x_scaled = self._x_scaler.transform(x_arr).astype(np.float32)
+        preds_s  = self._build_apply_fn()(
+            self._mlp_params,
+            jnp.array(x_scaled),
+            rng=None,
+            mode="test",
+        ).squeeze(-1)
+        return np.array(
+            self._y_scaler.inverse_transform(
+                np.array(preds_s).reshape(-1, 1)
+            ).ravel(),
+            dtype=np.float32,
+        )
+
+
 class DGPReal(DGP):
     """
     These are the necessary variables for all read data DGPs.  It defines how
@@ -1074,6 +1224,7 @@ OPENML_REGRESSION = [
     "kin8nm",
     "auction",
     "concrete",
+    "concrete-semireal",
     "energy",
     "grid",
     "fish",
@@ -1172,6 +1323,8 @@ def load_dgp(cfg, data_key: PRNGKeyArray) -> DGP:
         dgp = DGPClassificationOpenML(data_key, cfg.data_size, 1489, -1, 1)
     elif cfg.dgp.name == "phoneme-semireal":
         dgp = DGPSemiRealPhoneme(data_key, cfg.data_size, strata_bins=1)
+    elif cfg.dgp.name == "concrete-semireal":
+        dgp = DGPSemiRealConcrete(data_key, cfg.data_size, strata_bins=1)
     elif cfg.dgp.name == "skin":
         dgp = DGPClassificationOpenML(data_key, cfg.data_size, 1502, -1, 3)
     elif cfg.dgp.name == "rice":
