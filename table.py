@@ -312,3 +312,179 @@ df.to_csv("table/marginal-coverage.csv", index=False)
 
 
 # %%
+
+# Joint credible set coverage for abalone semi-synthetic data
+loss = "likelihood"
+rows = []
+for date in ["2025-09-12", "2025-09-13"]:
+    print(f"Date: {date}")
+    all_paths = get_experiment_paths(f"{output_dir}/{date}")
+    all_dgps = [utils.read_from(f"{p}/dgp.pickle") for p in all_paths]
+
+    preprocessor, functional, theta_true, _ = load_experiment(all_paths[0], loss=loss)
+    all_train_data = [preprocessor.encode_data(dgp.train_data) for dgp in all_dgps]
+    dim_theta = theta_true.shape[0]
+    dim_x = all_train_data[0]["x"].shape[-1]
+
+    # read all posterior and diagnostics as a dict for each seed
+    all_post_diagnostics = [read_post(p, loss) for p in all_paths]
+    assert all(
+        [post.keys() == all_post_diagnostics[0].keys() for post in all_post_diagnostics]
+    )
+
+    # turn all posterior and diagnostics from a list of dict to a dict of list
+    all_posterior = {
+        k: [post[k][0] for post in all_post_diagnostics]
+        for k in all_post_diagnostics[0].keys()
+    }
+    all_diagnostics = {
+        k: [post[k][1] for post in all_post_diagnostics]
+        for k in all_post_diagnostics[0].keys()
+    }
+
+    rank_x_ls = [np.linalg.matrix_rank(data["x"]) for data in all_train_data]
+
+    for alpha in [0.05]:
+        # For each alpha
+        for post_name, posterior in all_posterior.items():
+            # For each type of posterior
+            post_details = get_posterior_details(post_name)
+            cov_type = "ellipsoid" if post_name.startswith("gibbs") else "diag"
+            rate, _, post_cov_trace, post_cov_rank = get_coverage_given_posterior(
+                posterior, cov_type, alpha, theta_true
+            )
+            algo_rate = get_algo_success_rate(all_diagnostics[post_name])
+            row = {
+                "data": get_data_name(all_paths[0]),
+                "functional": get_functional(functional),
+                **post_details,
+                "cov_type": cov_type,
+                "rate": format_decimal(rate, 2),
+                "ideal_rate": 1 - alpha,
+                "post_cov_trace_mean": format_decimal(np.mean(post_cov_trace), 4),
+                "post_cov_trace_median": format_decimal(np.median(post_cov_trace), 4),
+                "post_cov_trace_q3": format_decimal(
+                    np.quantile(post_cov_trace, 0.75), 4
+                ),
+                "dim_theta": dim_theta,
+                "post_cov_rank_mean": format_decimal(np.mean(post_cov_rank), 2),
+                "training_set_size": get_data_size(all_paths[0]),
+                "resample_x": get_resample_x(all_paths[0]),
+                "dim_x": dim_x,
+                "algo_success_rate": format_decimal(algo_rate, 2),
+                "avg_rank_x": format_decimal(np.mean(rank_x_ls), 2),
+                "date": get_date_part(all_paths[0]),
+            }
+            print(row)
+            rows.append(row)
+
+        # CLT-based confidence set
+        rate, _, post_cov_trace, post_cov_rank = get_coverage_clt_confidence_set(
+            functional, all_train_data, theta_true, alpha, theta_true
+        )
+        row = {
+            "data": get_data_name(all_paths[0]),
+            "functional": get_functional(functional),
+            "post_name": "clt",
+            "rate": format_decimal(rate, 2),
+            "ideal_rate": 1 - alpha,
+            "post_cov_trace_mean": format_decimal(np.mean(post_cov_trace), 4),
+            "post_cov_trace_median": format_decimal(np.median(post_cov_trace), 4),
+            "post_cov_trace_q3": format_decimal(np.quantile(post_cov_trace, 0.75), 4),
+            "dim_theta": dim_theta,
+            "post_cov_rank_mean": format_decimal(np.mean(post_cov_rank), 2),
+            "training_set_size": get_data_size(all_paths[0]),
+            "dim_x": dim_x,
+            "date": get_date_part(all_paths[0]),
+        }
+        print(row)
+        rows.append(row)
+# %%
+# flag all rows that are either Gibbs or have the maximum T
+df = pd.DataFrame(rows)
+df["max_T"] = df["T"].isna() | (
+    df["T"] == df.groupby(["data", "post_name"])["T"].transform("max")
+)
+# %%
+df[(df["max_T"])]
+
+# %%
+
+# Marginal credible interval coverage (semi-synthetic phoneme data)
+
+# Setup the variable name for each dimension of theta
+data_info = pd.read_csv("./data_info.csv").rename(columns={"name": "data"})
+data_info["theta_name"] = data_info["theta_name"].apply(ast.literal_eval)
+
+ALPHA = 0.05
+loss = "likelihood"
+marginal_ci_coverage_ls = []
+for date in ["2025-09-13"]:
+    print(f"Date: {date}")
+    all_paths = get_experiment_paths(f"{output_dir}/{date}")
+    all_dgps = [utils.read_from(f"{p}/dgp.pickle") for p in all_paths]
+    data_name = get_data_name(all_paths[0])
+    theta_name = data_info[data_info["data"] == "phoneme"]["theta_name"].iloc[0]
+    preprocessor, functional, theta_true, _ = load_experiment(all_paths[0], loss=loss)
+    all_train_data = [preprocessor.encode_data(dgp.train_data) for dgp in all_dgps]
+    dim_theta = theta_true.shape[0]
+
+    # read all posterior and diagnostics as a dict for each seed
+    all_post_diagnostics = [read_post(p, loss) for p in all_paths]
+    assert all(
+        [post.keys() == all_post_diagnostics[0].keys() for post in all_post_diagnostics]
+    )
+
+    # turn all posterior from a list of dict to a dict of list
+    all_posterior = {
+        k: [post[k][0] for post in all_post_diagnostics]
+        for k in all_post_diagnostics[0].keys()
+    }
+
+    for post_name, posterior_ls in all_posterior.items():
+        marginal_ci_ls = [marginal_credible_interval(p, ALPHA) for p in posterior_ls]
+        coverage, width, winkler = marginal_coverage(marginal_ci_ls, theta_true, ALPHA)
+        post_details = get_posterior_details(post_name)
+        for c, w, wk, tn in zip(coverage, width, winkler, theta_name):
+            marginal_ci_coverage_ls.append(
+                {
+                    "data": data_name,
+                    "ideal_rate": 1 - ALPHA,
+                    **post_details,
+                    "theta_name": tn,
+                    "rate": c,
+                    "median_width": w,
+                    "median_winkler": wk,
+                    "training_set_size": get_data_size(all_paths[0]),
+                }
+            )
+
+    marginal_ci_ls = [
+        marginal_clt_credible_interval(functional, train_data, theta_true, ALPHA)
+        for train_data in all_train_data
+    ]
+    coverage, width, winkler = marginal_coverage(marginal_ci_ls, theta_true, ALPHA)
+    for c, w, wk, tn in zip(coverage, width, winkler, theta_name):
+        marginal_ci_coverage_ls.append(
+            {
+                "data": data_name,
+                "ideal_rate": 1 - ALPHA,
+                "post_name": "clt",
+                "theta_name": tn,
+                "rate": c,
+                "median_width": w,
+                "median_winkler": wk,
+                "training_set_size": get_data_size(all_paths[0]),
+            }
+        )
+df = pd.DataFrame(marginal_ci_coverage_ls)
+df["max_T"] = df["T"].isna() | (
+    df["T"] == df.groupby(["data", "post_name"])["T"].transform("max")
+)
+
+
+
+# %%
+df[(df["post_name"] != "copula-tabpfn") & (df["max_T"])]
+
+# %%

@@ -222,3 +222,173 @@ for method in ["tabpfn", "bb"]:
     )
 
 # %%
+# Extra long trace plots for selected setups
+EXTRA_LONG_DATES = [
+    "2025-09-01",
+    "2025-09-02",
+    "2025-09-03",
+    "2025-09-51",
+    "2025-09-52",
+    "2025-09-53",
+]
+EXTRA_LONG_TITLE = {
+    "2025-09-01": "Classification GMM $a=0$",
+    "2025-09-02": "Classification GMM $a=-1$",
+    "2025-09-03": "Classification GMM $a=-2$",
+    "2025-09-51": "skin",
+    "2025-09-52": "yeast",
+    "2025-09-53": "wine",
+}
+
+# %%
+
+n_plots = len(EXTRA_LONG_DATES)
+ncols = 3
+nrows = (n_plots + ncols - 1) // ncols
+
+
+for method in ["tabpfn"]:
+    # Set squeeze=False so 'axes' is always a 2D array
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(ncols * 6, nrows * 3.5), squeeze=False
+    )
+
+    # Flatten the 2D array of axes into a 1D array for easy looping
+    axes = axes.flatten()
+    plot_idx = 0  # Use this index to track which axis to plot on
+
+    for date, data_name in EXTRA_LONG_TITLE.items():
+        print(date)
+        date_path = f"{output_dir}/{date}"
+        all_paths = get_experiment_paths(date_path)
+        trace, trace_info = read_trace(all_paths[0], method, loss)
+        if trace is None:
+            continue  # Skip this item
+
+        l1 = np.mean(np.abs((trace - trace[0])), axis=-1)
+        N_idx = np.arange(
+            trace_info["start"], trace_info["end"] + 1, trace_info["resolution"]
+        )
+
+        ax = axes[plot_idx]
+        ax.plot(N_idx, l1, color="grey", alpha=0.2, linewidth=0.3)
+        ax.plot(N_idx, np.mean(l1, axis=-1), color="black", linewidth=3)
+
+        q1, q3 = np.quantile(l1[-1], [0.25, 0.75], axis=0)
+        iqr = q3 - q1
+        ax.set_ylim(bottom=0, top=q3 + 2 * iqr)
+        ax.set_ylabel(r"Scaled $L_1$")
+        ax.set_xlabel("N")
+        ax.set_title(EXTRA_LONG_TITLE[date])
+        ax.axvline(x=N_idx[0], linestyle="--", color="grey", linewidth=1.0)
+        plot_idx += 1
+
+    for i in range(plot_idx, len(axes)):
+        axes[i].axis("off")
+
+plt.tight_layout()
+
+# %%
+
+fig = plt.figure(figsize=(7, 3))
+for date in EXTRA_LONG_DATES:
+    print(date)
+    date_path = f"{output_dir}/{date}"
+    all_paths = get_experiment_paths(date_path)
+    data_name = utils.get_data_name(all_paths[0])
+
+    trace, trace_info = read_trace(all_paths[0], "tabpfn", loss)
+    l1 = np.mean(np.abs((trace - trace[0])), axis=-1)
+    N_idx = np.arange(
+        0, trace_info["end"] - trace_info["start"] + 1, trace_info["resolution"]
+    )
+    plt.plot(N_idx, np.mean(l1, axis=-1), color="black", linewidth=1, alpha=0.5)
+
+
+plt.ylabel(r"Scaled $L_1$")
+plt.xlabel("N - n")
+# plt.xlim(0, 500)
+# %%
+
+
+def read_trace2(path, method):
+    """
+    Read trace from the given path that matches method-*-*-*-trace.pickle.
+
+    Return a dict of the form {T: array of shape (samples, theta.size)} where T
+    is the number of forward recursion.
+    """
+    # match bb/tabpfn/copula-x-post.pickle
+    if match := re.search(
+        rf"{method}-(\d+)-(\d+)-(\d+)-trace.pickle", os.path.basename(path)
+    ):
+        trace, _ = utils.read_from(path)
+        info = {
+            "start": int(match.group(1)),
+            "end": int(match.group(2)),
+            "resolution": int(match.group(3)),
+        }
+        return trace, info
+    else:
+        raise ValueError(f"{path} is not a valid trace path.")
+
+
+# Expected l1-norm convergence plot, over 20 realisation of datasets
+
+n_plots = len(DATES)
+ncols = 4
+nrows = (n_plots + ncols - 1) // ncols
+
+for method in ["tabpfn"]:
+    # Set squeeze=False so 'axes' is always a 2D array
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(ncols * 6, nrows * 3.5), squeeze=False
+    )
+
+    # Flatten the 2D array of axes into a 1D array for easy looping
+    axes = axes.flatten()
+    plot_idx = 0  # Use this index to track which axis to plot on
+
+    for date, data_name in TITLE.items():
+        print(date)
+        trace_path = utils.get_matching_files(
+            f"{output_dir}/{date}",
+            rf"{method}-\d+-\d+-\d+-trace\.pickle",
+            recursive=True,
+        )
+        trace_path = [s for s in trace_path if "posterior-likelihood" in s]
+
+        exp_l1 = []
+        for path in trace_path[:20]:
+            trace, trace_info = read_trace2(path, method)
+            l1 = np.mean(np.abs((trace - trace[0])), axis=-1)
+            exp_l1.append(np.mean(l1, axis=-1)) # expectation over rollouts
+        exp_l1 = np.array(exp_l1) # shape (realisations, N_idx)
+        
+        N_idx = np.arange(
+            trace_info["start"], trace_info["end"] + 1, trace_info["resolution"]
+        )
+        ax = axes[plot_idx]
+        ax.plot(N_idx, exp_l1.T, color="black", alpha=0.3, linewidth=1)
+        # Expectation over realisation of datasets
+        # ax.plot(N_idx, np.median(exp_l1, axis=0), color="black", linewidth=3)
+
+        q1, q3 = np.quantile(exp_l1[:, -1], [0.25, 0.75], axis=0)
+        iqr = q3 - q1
+        ax.set_ylim(bottom=0, top=q3 + 2 * iqr)
+        ax.set_ylabel(r"Scaled $L_1$")
+        ax.set_xlabel("N")
+        ax.set_title(TITLE[date])
+        ax.axvline(x=N_idx[0], linestyle="--", color="grey", linewidth=1.0)
+        plot_idx += 1
+
+    for i in range(plot_idx, len(axes)):
+        axes[i].axis("off")
+
+    plt.tight_layout()
+    fig.savefig(
+        f"{savedir}/all-data-{method}-expected-l1-20reps.pdf",
+        bbox_inches="tight",
+    )
+
+# %%

@@ -324,3 +324,83 @@ read_csv("table/marginal-coverage.csv") |>
   ungroup() |>
   filter(bold) |>
   count(post_name, bold)
+
+
+
+
+
+
+
+## Comparing TabMGP vs Nagler and Rugamer vs Bayes with diffuse prior
+
+## filter out useless rows and columns, and rename posterior
+joint_coverage <- read_csv("table/joint-coverage.csv") |>
+  filter(max_T, post_name %in% c("tabpfn", "gibbs", "copula-tabpfn"), ideal_rate == 0.95) |>
+  select(setup = data, functional, post_name, rate, size = post_cov_trace_median, dim_theta, n_train = training_set_size) |>
+  mutate(
+    np_ratio = zapsmall(n_train / dim_theta, 2),
+    post_name = factor(post_name,
+      levels = c("tabpfn", "gibbs-eb", "gibbs", "copula", "copula-tabpfn"),
+      labels = c("TabMGP", "Bayes (Asymptotic)", "Bayes (Diffuse)", "Copula (Fong)", "Copula (NR)")
+    )
+  ) |>
+  arrange(desc(np_ratio), post_name) %>%
+  group_by(setup) |>
+  mutate(
+    covered = rate >= 0.95 | rate == max(rate, na.rm = TRUE),
+    min_covered = min(size[covered]),
+    bold = if_else(covered, size == min_covered, FALSE),
+    ## across(c(rate, size), ~ ifelse(bold, paste0("\\textbf{", format(round(.x, 2), nsmall = 2), "}"), format(round(.x, 2), nsmall = 2)))
+  )
+
+
+
+syn_reg <- joint_coverage |>
+  filter(str_detect(setup, "regression-"), functional == "likelihood-gaussian") |>
+  mutate(setup_factor = factor(setup, levels = synthetic_order)) |>
+  arrange(setup_factor) |>
+  mutate(setup = case_when(
+    setup == "regression-standard" ~ "$\\sN(0, 1)$",
+    setup == "regression-t-5" ~ "$t_5$",
+    setup == "regression-t-4" ~ "$t_4$",
+    setup == "regression-t-3" ~ "$t_3$",
+    setup == "regression-dependent-0.25-0.5" ~ "$s_1$",
+    setup == "regression-dependent-0.05-0.25" ~ "$s_2$",
+    setup == "regression-dependent-0.01-0.1" ~ "$s_3$",
+    TRUE ~ setup
+  ))
+
+real_reg <- joint_coverage |>
+  filter(str_starts(setup, "regression", negate = TRUE), functional == "likelihood-gaussian") |>
+  arrange(functional, desc(np_ratio))
+
+bind_rows(syn_reg, real_reg) |>
+  select(setup, post_name, rate, size, bold) |>
+  print(n = Inf)
+
+
+syn_class <- joint_coverage |>
+  filter(
+    str_detect(setup, "classification-"),
+    str_starts(functional, "likelihood"),
+  ) |>
+  mutate(setup_factor = factor(setup, levels = synthetic_order)) |>
+  arrange(setup_factor) |>
+  mutate(setup = case_when(
+    setup == "classification-standard" ~ "Logistic",
+    setup == "classification-gmm-0" ~ "GMM$(0)$",
+    setup == "classification-gmm--1" ~ "GMM$(-1)$",
+    setup == "classification-gmm--2" ~ "GMM$(-2)$",
+    TRUE ~ setup
+  ))
+
+real_class <- joint_coverage |>
+  filter(
+    str_starts(setup, "classification", negate = TRUE),
+    functional %in% c("likelihood-binary", "likelihood-multiclass"),
+  ) |>
+  arrange(functional, desc(np_ratio))
+
+bind_rows(syn_class, real_class) |>
+  select(setup, post_name, rate, size, bold) |>
+  print(n = Inf)
