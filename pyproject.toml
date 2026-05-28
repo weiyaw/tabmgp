@@ -1,0 +1,31 @@
+[project]
+name = "tabmgp"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "chex",
+    "equinox",
+    "jax",
+    "jaxtyping",
+    "numpy",
+    "optax",
+    "scikit-learn",
+    "tabpfn==2.0.6",
+    "torch",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+experiment = [
+    "blackjax",
+    "hydra-core",
+    "matplotlib",
+    "openml",
+    "pandas",
+    "scipy",
+    "seaborn",
+    "ucimlrepo",
+]
+dev = [
+    "ipykernel>=7.2.0",
+]

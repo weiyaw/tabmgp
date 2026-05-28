@@ -28,6 +28,7 @@ data_info["theta_name"] = data_info["theta_name"].apply(ast.literal_eval)
 output_dir = "../outputs"
 savedir = "../paper/images"
 loss = "likelihood"
+SAVE_PLOTS = True
 
 
 def read_post(path, method, loss):
@@ -162,11 +163,13 @@ for date in DATES:
     ]
     facet.figure.legend(handles=line_handles + density_handles, loc="lower right")
 
-    os.makedirs(f"{savedir}/density", exist_ok=True)
-    facet.savefig(f"{savedir}/density/{data_name}-density.pdf", bbox_inches="tight")
-    if data_name in ["classification-standard", "regression-standard", "abalone", "concrete", "telescope", "yeast"]:
-        # these are the one showing up in appendix
-        facet.savefig(f"{savedir}/{data_name}-density.pdf", bbox_inches="tight")
+    if SAVE_PLOTS:
+        os.makedirs(f"{savedir}/density", exist_ok=True)
+        facet.savefig(
+            f"{savedir}/density/density-{data_name}.pdf", bbox_inches="tight"
+        )
+    else:
+        plt.show()
     plt.close(facet.figure)
 
 
@@ -206,7 +209,10 @@ for d, ax in enumerate(axes.flat):
 handles, labels = axes.flat[0].get_legend_handles_labels()
 fig.legend(handles, labels, loc="lower right")
 plt.tight_layout()
-plt.savefig(f"{savedir}/toy-concentration.pdf")
+if SAVE_PLOTS:
+    plt.savefig(f"{savedir}/concentration-toy.pdf")
+else:
+    plt.show()
 
 
 # %%
@@ -254,7 +260,10 @@ density_handles = [
 handles = line_handles + density_handles
 plt.legend(handles=handles, loc="upper left")
 plt.tight_layout()
-fig.savefig(f"{savedir}/concrete-intercept-kde.pdf", bbox_inches="tight")
+if SAVE_PLOTS:
+    fig.savefig(f"{savedir}/density/density-concrete-intercept.pdf", bbox_inches="tight")
+else:
+    plt.show()
 
 
 # %%
@@ -314,10 +323,13 @@ plt.xticks(
     ticks=np.arange(len(synthetic_data)),
     labels=[synthetic_data_xtick_label.get(name, name) for name in synthetic_data],
 )
-plt.savefig(
-    f"{savedir}/synthetic-marginal-coverage.pdf",
-    bbox_inches="tight",
-)
+if SAVE_PLOTS:
+    plt.savefig(
+        f"{savedir}/marginal-coverage-synthetic.pdf",
+        bbox_inches="tight",
+    )
+else:
+    plt.show()
 
 # %%
 # Boxplot of the marginal coverage (linear regression, real data)
@@ -339,10 +351,13 @@ plt.legend(handles, new_labels, loc="lower right")
 plt.ylabel("Coverage")
 plt.ylim(0.29, 1.02)
 plt.xlabel("Dataset")
-plt.savefig(
-    f"{savedir}/regression-marginal-coverage.pdf",
-    bbox_inches="tight",
-)
+if SAVE_PLOTS:
+    plt.savefig(
+        f"{savedir}/marginal-coverage-linear.pdf",
+        bbox_inches="tight",
+    )
+else:
+    plt.show()
 # %%
 
 # Boxplot of the marginal coverage (logistic regression, real data)
@@ -364,9 +379,12 @@ plt.legend(handles, new_labels, loc="lower right")
 plt.ylabel("Coverage")
 plt.ylim(0.29, 1.02)
 plt.xlabel("Dataset")
-plt.savefig(
-    f"{savedir}/classification-marginal-coverage.pdf",
-    bbox_inches="tight",
-)
+if SAVE_PLOTS:
+    plt.savefig(
+        f"{savedir}/marginal-coverage-logistic.pdf",
+        bbox_inches="tight",
+    )
+else:
+    plt.show()
 
 # %%

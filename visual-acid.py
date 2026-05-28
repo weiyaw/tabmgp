@@ -12,6 +12,7 @@ import utils
 
 acid_dir = f"../outputs/2025-06-97/name=classification-fixed dim_x=2 resample_x=bb data=100 seed=1001/acid"
 image_dir = "../paper/images/"
+SAVE_PLOTS = True
 
 acid_eval_dir = [
     (m, f"{acid_dir}/{p}")
@@ -97,6 +98,9 @@ for i in range(n_col):
     axes[n_row - 1, i].set_xlabel("N")
 
 plt.tight_layout()
-plt.savefig(f"{image_dir}/classification-acid-sum-delta-y1.pdf")
+if SAVE_PLOTS:
+    plt.savefig(f"{image_dir}/acid-deltasum-y1-logistic.pdf")
+else:
+    plt.show()
 
 # %%

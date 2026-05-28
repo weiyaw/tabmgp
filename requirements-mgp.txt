@@ -1,8 +1,10 @@
+torch
 tabpfn
 tqdm
 numpy
-hydra-core
 jax
+jaxtyping
 chex
 equinox
 optax
+scikit-learn
