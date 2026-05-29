@@ -8,7 +8,7 @@ import time
 import warnings
 
 import torch
-from rollout import TabPFNClassifierPredRule, TabPFNRegressorPredRule
+from tabmgp import TabPFNClassifierPPD, TabPFNRegressorPPD
 
 from jaxtyping import Array, ArrayLike, PRNGKeyArray
 
@@ -333,7 +333,10 @@ def _tabpfn_init_classification(
     y_train: ArrayLike,
     x_test: ArrayLike,
 ):
-    classifier = TabPFNClassifierPredRule(categorical_x, device="cpu")
+    categorical_features_indices = [i for i, c in enumerate(categorical_x) if c]
+    classifier = TabPFNClassifierPPD(
+        categorical_features_indices=categorical_features_indices, device="cpu"
+    )
     probs1_yn = classifier.pmf(
         np.array([1], dtype=int),
         np.asarray(x_train),
@@ -462,7 +465,10 @@ def _tabpfn_init_cregression(
     x_test: ArrayLike,
     y_test: ArrayLike,
 ):
-    regressor = TabPFNRegressorPredRule(categorical_x, device="cpu")
+    categorical_features_indices = [i for i, c in enumerate(categorical_x) if c]
+    regressor = TabPFNRegressorPPD(
+        categorical_features_indices=categorical_features_indices, device="cpu"
+    )
     regressor.fit(np.asarray(x_train), np.asarray(y_train))
 
     with warnings.catch_warnings():

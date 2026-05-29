@@ -29,25 +29,39 @@ def assert_ppd_args_shape(x_new, x_prev, y_prev):
     assert y_prev.ndim == 1, "y_prev must be 1D array"
 
 
-class TabPFNRegressorPredRule(TabPFNRegressor):
+class TabPFNRegressorPPD(TabPFNRegressor):
 
     def __init__(
         self,
-        categorical_x: list[bool],
+        *,
         n_estimators: int = 8,  # this is the default in 2.0.6
         average_before_softmax: bool = False,
-        device: str = "auto",
+        softmax_temperature: float = 1.0,
+        fit_mode: str = "low_memory",
+        model_path: str = "tabpfn-v2-regressor.ckpt",
+        **kwargs,
     ):
-        categorical_features_indices = [i for i, c in enumerate(categorical_x) if c]
         super().__init__(
             n_estimators=n_estimators,
             average_before_softmax=average_before_softmax,
-            softmax_temperature=1.0,
-            categorical_features_indices=categorical_features_indices,
-            fit_mode="low_memory",
-            model_path="tabpfn-v2-regressor.ckpt",
-            device=device,
+            softmax_temperature=softmax_temperature,
+            fit_mode=fit_mode,
+            model_path=model_path,
+            **kwargs,
         )
+
+    def _predict_full(
+        self, x_new: np.ndarray, x_prev: np.ndarray, y_prev: np.ndarray
+    ) -> dict:
+        assert_ppd_args_shape(x_new, x_prev, y_prev)
+        self.fit(x_prev, y_prev)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="overflow encountered in cast",
+                category=RuntimeWarning,
+            )
+            return self.predict(x_new, output_type="full")
 
     def sample(
         self,
@@ -57,15 +71,7 @@ class TabPFNRegressorPredRule(TabPFNRegressor):
         y_prev: np.ndarray,
     ) -> np.ndarray:
         # Sample from predictive density
-        assert_ppd_args_shape(x_new, x_prev, y_prev)
-        self.fit(x_prev, y_prev)
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message="overflow encountered in cast",
-                category=RuntimeWarning,
-            )
-            pred_output = self.predict(x_new, output_type="full")
+        pred_output = self._predict_full(x_new, x_prev, y_prev)
         bardist = pred_output["criterion"]
         logits = pred_output["logits"]  # (m, num_of_bins)
 
@@ -103,15 +109,7 @@ class TabPFNRegressorPredRule(TabPFNRegressor):
             Inverse CDF values. Each row corresponds to a value of u, and each
             column corresponds to a value of x_new. Shape: (p, m)
         """
-        assert_ppd_args_shape(x_new, x_prev, y_prev)
-        self.fit(x_prev, y_prev)
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message="overflow encountered in cast",
-                category=RuntimeWarning,
-            )
-            pred_output = self.predict(x_new, output_type="full")
+        pred_output = self._predict_full(x_new, x_prev, y_prev)
         bardist = pred_output["criterion"]
         logits = pred_output["logits"]  # (m, num_of_bins)
 
@@ -208,24 +206,25 @@ class TabPFNRegressorPredRule(TabPFNRegressor):
         return np.stack(results)
 
 
-class TabPFNClassifierPredRule(TabPFNClassifier):
+class TabPFNClassifierPPD(TabPFNClassifier):
 
     def __init__(
         self,
-        categorical_x: list[bool],
+        *,
         n_estimators: int = 4,  # this is the default in 2.0.6
         average_before_softmax: bool = False,
-        device: str = "auto",
+        softmax_temperature: float = 1.0,
+        fit_mode: str = "low_memory",
+        model_path: str = "tabpfn-v2-classifier.ckpt",
+        **kwargs,
     ):
-        categorical_features_indices = [i for i, c in enumerate(categorical_x) if c]
         super().__init__(
             n_estimators=n_estimators,
             average_before_softmax=average_before_softmax,
-            softmax_temperature=1.0,
-            categorical_features_indices=categorical_features_indices,
-            fit_mode="low_memory",
-            model_path="tabpfn-v2-classifier.ckpt",
-            device=device,
+            softmax_temperature=softmax_temperature,
+            fit_mode=fit_mode,
+            model_path=model_path,
+            **kwargs,
         )
 
     def sample(

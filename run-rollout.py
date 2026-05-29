@@ -17,7 +17,7 @@ from dgp import (
     OPENML_REGRESSION,
     load_dgp,
 )
-from rollout import TabPFNClassifierPredRule, TabPFNRegressorPredRule, forward_sampling
+from tabmgp import TabPFNClassifierPPD, TabPFNRegressorPPD, forward_sampling
 
 warnings.filterwarnings(
     "ignore",
@@ -42,28 +42,46 @@ def main(cfg: DictConfig):
     # Setup data
     dgp = load_dgp(cfg, data_key)
     utils.write_to(f"{outdir}/dgp.pickle", dgp)
-    dim_x = dgp.train_data["x"].shape[-1]
 
     # Setup prediction rule
     if cfg.dgp.name.startswith("regression-fixed"):
-        pred_rule = TabPFNRegressorPredRule(
-            [False] * dim_x, cfg.n_estimators, cfg.average_before_softmax
+        pred_rule = TabPFNRegressorPPD(
+            categorical_features_indices=[],
+            n_estimators=cfg.n_estimators,
+            average_before_softmax=cfg.average_before_softmax,
         )
     elif cfg.dgp.name.startswith("classification-fixed"):
-        pred_rule = TabPFNClassifierPredRule(
-            [False] * dim_x, cfg.n_estimators, cfg.average_before_softmax
+        pred_rule = TabPFNClassifierPPD(
+            categorical_features_indices=[],
+            n_estimators=cfg.n_estimators,
+            average_before_softmax=cfg.average_before_softmax,
         )
     elif cfg.dgp.name in OPENML_CLASSIFICATION:
-        pred_rule = TabPFNClassifierPredRule(
-            dgp.categorical_x, cfg.n_estimators, cfg.average_before_softmax
+        categorical_features_indices = [
+            i for i, c in enumerate(dgp.categorical_x) if c
+        ]
+        pred_rule = TabPFNClassifierPPD(
+            categorical_features_indices=categorical_features_indices,
+            n_estimators=cfg.n_estimators,
+            average_before_softmax=cfg.average_before_softmax,
         )
     elif cfg.dgp.name in OPENML_BINARY_CLASSIFICATION:
-        pred_rule = TabPFNClassifierPredRule(
-            dgp.categorical_x, cfg.n_estimators, cfg.average_before_softmax
+        categorical_features_indices = [
+            i for i, c in enumerate(dgp.categorical_x) if c
+        ]
+        pred_rule = TabPFNClassifierPPD(
+            categorical_features_indices=categorical_features_indices,
+            n_estimators=cfg.n_estimators,
+            average_before_softmax=cfg.average_before_softmax,
         )
     elif cfg.dgp.name in OPENML_REGRESSION:
-        pred_rule = TabPFNRegressorPredRule(
-            dgp.categorical_x, cfg.n_estimators, cfg.average_before_softmax
+        categorical_features_indices = [
+            i for i, c in enumerate(dgp.categorical_x) if c
+        ]
+        pred_rule = TabPFNRegressorPPD(
+            categorical_features_indices=categorical_features_indices,
+            n_estimators=cfg.n_estimators,
+            average_before_softmax=cfg.average_before_softmax,
         )
     else:
         raise ValueError(f"Unknown experiment name: {cfg.dgp.name}")

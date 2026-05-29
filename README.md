@@ -6,7 +6,7 @@ each use case listed below.
 ## For Trying Out TabMGP
 
 See `example.py` for a minimal example of computing TabMGP. The only required
-script is `rollout.py`, which performs forward sampling. You can then use the
+script is `tabmgp.py`, which performs forward sampling. You can then use the
 estimators in `scikit-learn` as your functional. The `requirements-mgp.txt` file
 contains all the packages for trying out TabMGP, without the heavy packages
 needed for reproducing the experiments.
@@ -24,15 +24,15 @@ of the paper).
 ```python
 import jax
 import numpy as np
-from rollout import forward_sampling, TabPFNClassifierPredRule
+from tabmgp import forward_sampling, TabPFNClassifierPPD
 
 # Generate some dummy training data for logistic regression
 x_train = jax.random.normal(jax.random.key(101), (20, 5))
 y_train = jax.random.bernoulli(jax.random.key(102), p=0.4, shape=(20,)).astype(int)
 
 # Set up TabPFN as the prediction rule
-pred_rule = TabPFNClassifierPredRule(
-    categorical_x=[False] * x_train.shape[-1],
+pred_rule = TabPFNClassifierPPD(
+    categorical_features_indices=[],
     n_estimators=4,
     average_before_softmax=False,
 )
@@ -175,7 +175,7 @@ We also have a script to compute acid-related objects.
 +-- functional.py (helper functions of all functionals, e.g. MLE estimators)
 +-- optimizer.py (a collection of gradient-based optimisers, including L-BFGS)
 +-- preprocessor.py (helper functions to clean up data and drop collinear features)
-+-- rollout.py (functions that define TabMGP predictive rules)
++-- tabmgp.py (functions that define TabMGP predictive rules)
 +-- utils.py (miscellaneous utility functions)
 
 +-- plot_settings.py (some constants useful for reproducing tables and plots in the paper)

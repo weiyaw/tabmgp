@@ -9,6 +9,7 @@ dependencies = [
     "jaxtyping",
     "numpy",
     "optax",
+    "pytest>=9.0.3",
     "scikit-learn",
     "tabpfn==2.0.6",
     "torch",

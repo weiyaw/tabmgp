@@ -1,6 +1,6 @@
 import os
 
-from rollout import TabPFNClassifierPredRule, TabPFNRegressorPredRule
+from tabmgp import TabPFNClassifierPPD, TabPFNRegressorPPD
 import jax
 import jax.numpy as jnp
 import chex
@@ -38,7 +38,7 @@ warnings.filterwarnings(
 log = logging.getLogger(__name__)
 
 
-class TabPFNRegresorPredRuleAcid(TabPFNRegressorPredRule):
+class TabPFNRegressorPPDAcid(TabPFNRegressorPPD):
 
     def log_prob(self, x_new: np.ndarray) -> np.ndarray:
         with warnings.catch_warnings():
@@ -52,7 +52,7 @@ class TabPFNRegresorPredRuleAcid(TabPFNRegressorPredRule):
         return log_softmax(logits, axis=-1)
 
 
-class TabPFNClassifierPredRuleAcid(TabPFNClassifierPredRule):
+class TabPFNClassifierPPDAcid(TabPFNClassifierPPD):
 
     def log_prob(self, x_new: np.ndarray) -> np.ndarray:
         return np.log(self.predict_proba(x_new))
@@ -232,18 +232,27 @@ def main(cfg: DictConfig):
     x_train = dgp.train_data["x"]
     y_train = dgp.train_data["y"]
     x_support = unique_rows(x_train)
-    dim_x = x_support.shape[1]
 
     if name is not None and name.startswith("classification"):
-        pfn_ppd = TabPFNClassifierPredRuleAcid([False] * dim_x)
+        pfn_ppd = TabPFNClassifierPPDAcid(categorical_features_indices=[])
     elif name is not None and name.startswith("regression"):
-        pfn_ppd = TabPFNRegresorPredRuleAcid([False] * dim_x)
+        pfn_ppd = TabPFNRegressorPPDAcid(categorical_features_indices=[])
     elif name in OPENML_CLASSIFICATION + OPENML_BINARY_CLASSIFICATION:
-        pfn_ppd = TabPFNClassifierPredRuleAcid(dgp.categorical_x)
+        categorical_features_indices = [
+            i for i, c in enumerate(dgp.categorical_x) if c
+        ]
+        pfn_ppd = TabPFNClassifierPPDAcid(
+            categorical_features_indices=categorical_features_indices
+        )
     elif name in OPENML_REGRESSION:
-        pfn_ppd = TabPFNRegresorPredRuleAcid(dgp.categorical_x)
+        categorical_features_indices = [
+            i for i, c in enumerate(dgp.categorical_x) if c
+        ]
+        pfn_ppd = TabPFNRegressorPPDAcid(
+            categorical_features_indices=categorical_features_indices
+        )
     elif name == "gamma":
-        pfn_ppd = TabPFNRegresorPredRuleAcid([False] * dim_x)
+        pfn_ppd = TabPFNRegressorPPDAcid(categorical_features_indices=[])
     else:
         raise ValueError(f"Unknown dgp name {name}")
 
