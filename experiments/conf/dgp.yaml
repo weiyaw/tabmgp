@@ -4,6 +4,7 @@ defaults:
 
 data_size: 500
 seed: 999
+run_name: dgp
 
 id: ${now:%Y-%m-%d}
 lastrun: ${now:%Y-%m-%dT%H:%M:%S%z}
@@ -15,6 +16,9 @@ hydra:
       ${print_dgp:${dgp}}
       data=${data_size}
       seed=${seed}"
-  sweep:
-    dir: ${hydra.run.dir}
-    subdir: .
+  output_subdir: null
+  job_logging:
+    handlers:
+      file:
+        filename: "${hydra.runtime.output_dir}/logs/${run_name}.log"
+        delay: true

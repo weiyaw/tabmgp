@@ -9,6 +9,7 @@ forward_steps: 1000
 data_size: 25
 rollout_x: "truth"
 seed: 999
+run_name: cid
 
 id: ${now:%Y-%m-%d}
 lastrun: ${now:%Y-%m-%dT%H:%M:%S%z}
@@ -17,6 +18,9 @@ git: ${githash:}
 hydra:
   run:
     dir: "./outputs/${id}/cid dgp=${dgp.name} n0=${data_size} rollout_x=${rollout_x} n_est=${n_estimators} seed=${seed}"
-  sweep:
-    dir: ${hydra.run.dir}
-    subdir: .
+  output_subdir: null
+  job_logging:
+    handlers:
+      file:
+        filename: "${hydra.runtime.output_dir}/logs/${run_name}.log"
+        delay: true

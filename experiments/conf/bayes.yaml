@@ -1,8 +1,9 @@
 expdir: ???
 loss: likelihood
 seed: 999
+run_name: bayes-${prior}
 
-eb: True
+prior: asymp
 step_size: 1e-3
 n_warmup: 1000
 n_samples: 2000
@@ -14,6 +15,9 @@ git: ${githash:}
 hydra:
   run:
     dir: "./${expdir}"
-  sweep:
-    dir: ${hydra.run.dir}
-    subdir: .
+  output_subdir: null
+  job_logging:
+    handlers:
+      file:
+        filename: "./${expdir}/logs/${run_name}.log"
+        delay: true

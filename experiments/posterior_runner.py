@@ -102,7 +102,7 @@ def save_mgp_posts(
     rollout: dict[str, Array],
     init_theta: Array,
     savedir: str,
-    method_name: str,
+    run_name: str,
     n_train: int,
     eval_t,
     max_t_override: int | None = None,
@@ -116,9 +116,9 @@ def save_mgp_posts(
         start = timer()
         rollout_subset = truncate_rollout(rollout, n_train + t)
         post = functional.get_mgp(rollout_subset, init_theta)
-        utils.write_to(f"{savedir}/{method_name}-{t}-post.pickle", post, verbose=True)
+        utils.write_to(f"{savedir}/{run_name}-{t}-post.pickle", post, verbose=True)
         logging.info(f"Diagnostics: {np.mean(post[1].success)}")
-        logging.info(f"{method_name} posterior ({t}): {timer() - start:.2f} seconds")
+        logging.info(f"{run_name} posterior ({t}): {timer() - start:.2f} seconds")
 
 
 def save_trace(
@@ -126,7 +126,7 @@ def save_trace(
     rollout: dict[str, Array],
     init_theta: Array,
     savedir: str,
-    method_name: str,
+    run_name: str,
     n_train: int,
     resolution: int,
     batch_size,
@@ -153,8 +153,8 @@ def save_trace(
         freq=freq,
     )
     utils.write_to(
-        f"{savedir}/{method_name}-{n_train}-{max_t + n_train}-{freq}-trace.pickle",
+        f"{savedir}/{run_name}-{n_train}-{max_t + n_train}-{freq}-trace.pickle",
         trace,
         verbose=True,
     )
-    logging.info(f"{method_name} trace: {timer() - start:.2f} seconds")
+    logging.info(f"{run_name} trace: {timer() - start:.2f} seconds")

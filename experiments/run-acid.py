@@ -208,14 +208,11 @@ def delta_joint_logppd(key, ppd, x_support, idx_prev, y_prev, L):
 def main(cfg: DictConfig):
     OmegaConf.resolve(cfg)
     path = cfg.expdir
+    os.makedirs(f"{path}/logs", exist_ok=True)
+    os.makedirs(f"{path}/configs", exist_ok=True)
+    OmegaConf.save(cfg, f"{path}/configs/{cfg.run_name}.yaml")
 
     log.setLevel(logging.INFO)
-    os.makedirs(f"{path}/acid-log", exist_ok=True)
-    log.addHandler(
-        logging.FileHandler(
-            f"{path}/acid-log/sample-{cfg.sample_idx}.log", mode="w", delay=True
-        )
-    )
     log.info(f"Hydra version: {hydra.__version__}")
     log.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
 
@@ -331,7 +328,7 @@ def main(cfg: DictConfig):
 
         log.info(f"Time for x=x[{j}]: {timer() - start:.2f} secs")
 
-    log.info(f"acid {cfg.sample_idx} takes {timer() - start_loop:.2f} secs")
+    log.info(f"{cfg.run_name} takes {timer() - start_loop:.2f} secs")
 
 
 if __name__ == "__main__":

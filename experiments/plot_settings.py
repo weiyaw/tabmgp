@@ -105,23 +105,27 @@ TITLE = {
 # Colour palette for each method
 palette = sns.color_palette("colorblind")
 COLOR_PALETTE = {
-    "tabpfn": palette[0],
+    "tabmgp": palette[0],
     "bb": palette[1],
-    "gibbs-eb": palette[3],
-    "copula": palette[2],
+    "bayes-asymp": palette[3],
+    "bayes-flat": palette[4],
+    "copula-std": palette[2],
+    "copula-tabpfn": palette[5],
 }
 
 MARKER_SHAPES = {
-    "tabpfn": "o",
+    "tabmgp": "o",
     "bb": "X",
-    "gibbs-eb": "d",
-    "copula": "^",
+    "bayes-asymp": "d",
+    "bayes-flat": "s",
+    "copula-std": "^",
+    "copula-tabpfn": "P",
 }
 
 
 POSTERIOR_NAMES = {
-    "tabpfn": "TabMGP",
+    "tabmgp": "TabMGP",
     "bb": "BB",
-    "gibbs-eb": "Bayes",
-    "copula": "Copula",
+    "bayes-asymp": "Bayes",
+    "copula-std": "Copula",
 }

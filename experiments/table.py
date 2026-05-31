@@ -142,7 +142,7 @@ def get_coverage_clt_confidence_set(
 
 
 def get_posterior_details(post_key):
-    # post_key: bayes, bayes-eb, bb-x, tabmgp-x, copula-x
+    # post_key: bayes-flat, bayes-asymp, bb-x, tabmgp-x, copula-x
 
     if match := re.match(r"(.+)-(\d+)", post_key):
         return {"post_name": match.group(1), "T": int(match.group(2))}
@@ -163,6 +163,7 @@ def get_algo_success_rate(diagnostic_ls):
 
 # The directory that contains all the experiment outputs
 output_dir = str(BASE_DIR / "outputs")
+SEMIREAL_IDS = ["semireal-01", "semireal-02", "semireal-03", "semireal-04"]
 
 # %%
 # Joint credible set coverage
@@ -317,10 +318,10 @@ df.to_csv(TABLE_DIR / "marginal-coverage.csv", index=False)
 
 # %%
 
-# Joint credible set coverage for abalone semi-synthetic data
+# Joint credible set coverage for semi-real regression data
 loss = "likelihood"
 rows = []
-for id in ["2025-09-12", "2025-09-13"]:
+for id in SEMIREAL_IDS:
     print(f"ID: {id}")
     all_paths = get_experiment_paths(f"{output_dir}/{id}")
     all_dgps = [utils.read_from(f"{p}/dgp.pickle") for p in all_paths]
@@ -414,7 +415,7 @@ df[(df["max_T"])]
 
 # %%
 
-# Marginal credible interval coverage (semi-synthetic phoneme data)
+# Marginal credible interval coverage for semi-real regression data
 
 # Setup the variable name for each dimension of theta
 data_info = pd.read_csv(BASE_DIR / "data_info.csv").rename(columns={"name": "data"})
@@ -423,12 +424,13 @@ data_info["theta_name"] = data_info["theta_name"].apply(ast.literal_eval)
 ALPHA = 0.05
 loss = "likelihood"
 marginal_ci_coverage_ls = []
-for id in ["2025-09-13"]:
+for id in SEMIREAL_IDS:
     print(f"ID: {id}")
     all_paths = get_experiment_paths(f"{output_dir}/{id}")
     all_dgps = [utils.read_from(f"{p}/dgp.pickle") for p in all_paths]
     data_name = get_data_name(all_paths[0])
-    theta_name = data_info[data_info["data"] == "phoneme"]["theta_name"].iloc[0]
+    data_info_name = data_name.removesuffix("-semireal")
+    theta_name = data_info[data_info["data"] == data_info_name]["theta_name"].iloc[0]
     preprocessor, functional, theta_true, _ = load_experiment(all_paths[0], loss=loss)
     all_train_data = [preprocessor.encode_data(dgp.train_data) for dgp in all_dgps]
     dim_theta = theta_true.shape[0]

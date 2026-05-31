@@ -1,4 +1,5 @@
 import logging
+import os
 from timeit import default_timer as timer
 
 import hydra
@@ -19,18 +20,25 @@ jax.config.update("jax_enable_x64", True)
 @hydra.main(version_base=None, config_path="conf", config_name="bayes")
 def main(cfg: DictConfig):
     OmegaConf.resolve(cfg)
+    os.makedirs(f"{cfg.expdir}/logs", exist_ok=True)
+    os.makedirs(f"{cfg.expdir}/configs", exist_ok=True)
+    OmegaConf.save(cfg, f"{cfg.expdir}/configs/{cfg.run_name}.yaml")
+
     logging.info(f"Hydra version: {hydra.__version__}")
     logging.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
+
+    if cfg.prior not in ["flat", "asymp"]:
+        raise ValueError("cfg.prior must be either 'flat' or 'asymp'.")
 
     ctx = load_posterior_context(cfg.expdir, cfg.loss)
     bayes_key = method_key(cfg.seed, "bayes")
 
-    logging.info("Run untempered Bayes posterior")
+    logging.info(f"Run {cfg.run_name}: untempered Bayes posterior.")
     start = timer()
     _, subkey = jax.random.split(bayes_key)
     prior_mean = jnp.zeros_like(ctx.init_theta)
     prior_cov = jnp.eye(len(ctx.init_theta)) * 10**2
-    if cfg.eb:
+    if cfg.prior == "asymp":
         prior_mean = ctx.init_theta
         hessian = jax.hessian(ctx.functional.loss, argnums=1)(
             ctx.train_data, ctx.init_theta, None
@@ -61,14 +69,13 @@ def main(cfg: DictConfig):
         success=nuts_state["acceptance_rate"], state=nuts_state
     )
 
-    post_name = "bayes-eb" if cfg.eb else "bayes"
     utils.write_to(
-        f"{ctx.savedir}/{post_name}-post.pickle",
+        f"{ctx.savedir}/{cfg.run_name}-post.pickle",
         (samples, diagnostics),
         verbose=True,
     )
     logging.info(f"Diagnostics: {np.mean(diagnostics.success):.2f}")
-    logging.info(f"Bayes posterior: {timer() - start:.2f} seconds")
+    logging.info(f"{cfg.run_name} posterior: {timer() - start:.2f} seconds")
 
 
 if __name__ == "__main__":

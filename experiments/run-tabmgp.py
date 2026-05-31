@@ -73,6 +73,10 @@ def make_pred_rule(cfg: DictConfig, dgp, exp_name: str):
 @hydra.main(version_base=None, config_path="conf", config_name="tabmgp")
 def main(cfg: DictConfig):
     OmegaConf.resolve(cfg)
+    os.makedirs(f"{cfg.expdir}/logs", exist_ok=True)
+    os.makedirs(f"{cfg.expdir}/configs", exist_ok=True)
+    OmegaConf.save(cfg, f"{cfg.expdir}/configs/{cfg.run_name}.yaml")
+
     logging.info(f"Hydra version: {hydra.__version__}")
     logging.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
 
@@ -103,13 +107,13 @@ def main(cfg: DictConfig):
     full_rollout = ctx.preprocessor.encode_data(
         compile_rollout(cfg.expdir, "tabmgp-rollout")
     )
-    logging.info(f"Shape of TabMGP rollout: {utils.tree_shape(full_rollout)}")
+    logging.info(f"Shape of {cfg.run_name} rollout: {utils.tree_shape(full_rollout)}")
     save_mgp_posts(
         ctx.functional,
         full_rollout,
         ctx.init_theta,
         ctx.savedir,
-        "tabmgp",
+        cfg.run_name,
         ctx.n_train,
         cfg.eval_t,
     )
@@ -119,7 +123,7 @@ def main(cfg: DictConfig):
             full_rollout,
             ctx.init_theta,
             ctx.savedir,
-            "tabmgp",
+            cfg.run_name,
             ctx.n_train,
             cfg.resolution,
             cfg.batch,

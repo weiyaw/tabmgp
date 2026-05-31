@@ -85,9 +85,9 @@ for id in IDS:
     # Prepare a dataframe for seaborn
     data_list = []
     for method in POSTERIOR_NAMES.keys():
-        if method == "bayes-eb":
+        if method == "bayes-asymp":
             data = utils.read_from(
-                f"{all_paths[0]}/posterior-{loss}/bayes-eb-post.pickle"
+                f"{all_paths[0]}/posterior-{loss}/bayes-asymp-post.pickle"
             )[0]
         else:
             data = read_max_T_post(all_paths[0], method, loss)
@@ -228,8 +228,8 @@ mle, _ = functional.minimize_loss(train_data, theta_true, None)
 
 fig = plt.figure(figsize=(7, 3))
 for i, method in enumerate(POSTERIOR_NAMES.keys()):
-    if method == "bayes-eb":
-        post = utils.read_from(f"{path}/posterior-{loss}/bayes-eb-post.pickle")[0][:, 0]
+    if method == "bayes-asymp":
+        post = utils.read_from(f"{path}/posterior-{loss}/bayes-asymp-post.pickle")[0][:, 0]
     else:
         post = read_max_T_post(path, method, loss)[:, 0]
 

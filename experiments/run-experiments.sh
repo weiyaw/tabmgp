@@ -46,6 +46,15 @@ for seed in {1001..1100}; do
 done
 
 
+# Semi-real linear regression setup (coverage)
+for seed in {1001..1050}; do
+    python prepare-dgp.py id="semireal-01" data_size=100 dgp=openml dgp.name=concrete-semireal seed=${seed}
+    python prepare-dgp.py id="semireal-02" data_size=100 dgp=openml dgp.name=abalone-semireal seed=${seed}
+    python prepare-dgp.py id="semireal-03" data_size=50 dgp=openml dgp.name=concrete-semireal seed=${seed}
+    python prepare-dgp.py id="semireal-04" data_size=20 dgp=openml dgp.name=abalone-semireal seed=${seed}
+done
+
+
 # Check for convergence with larger rollout length (1000)
 python prepare-dgp.py id="longroll-01" data_size=50 dgp=openml dgp.name=skin seed=${seed}
 python prepare-dgp.py id="longroll-02" data_size=200 dgp=openml dgp.name=yeast seed=${seed}
@@ -79,7 +88,7 @@ while read -r -d $'\0' path; do
     tabmgp_args=()
 
     case "$path" in
-        */linreg-*/*|*/linreg-real-*/*)
+        */linreg-*/*|*/linreg-real-*/*|*/semireal-*/*)
             tabmgp_args+=("n_estimators=8")
             ;;
     esac
@@ -94,17 +103,17 @@ while read -r -d $'\0' path; do
         # For seed 1001, also compute the trace
         python run-tabmgp.py "expdir='${path}'" "trace=True" "${tabmgp_args[@]}"
         python run-bb.py "expdir='${path}'" "trace=True"
-        python run-copula.py "expdir='${path}'" "trace=True" "init=copula"
+        python run-copula.py "expdir='${path}'" "trace=True" "init=std"
         python run-copula.py "expdir='${path}'" "trace=True" "init=tabpfn"
-        python run-bayes.py "expdir='${path}'" "eb=True"
+        python run-bayes.py "expdir='${path}'" "prior=asymp"
     fi
 
     if [ "$seed" != "1001" ]; then
         python run-tabmgp.py "expdir='${path}'" "trace=False" "${tabmgp_args[@]}"
         python run-bb.py "expdir='${path}'" "trace=False"
-        python run-copula.py "expdir='${path}'" "trace=False" "init=copula"
+        python run-copula.py "expdir='${path}'" "trace=False" "init=std"
         python run-copula.py "expdir='${path}'" "trace=False" "init=tabpfn"
-        python run-bayes.py "expdir='${path}'" "eb=True"
+        python run-bayes.py "expdir='${path}'" "prior=asymp"
     fi
 
 done < <(find "$OUTPUT_PATH" -mindepth 2 -maxdepth 2 -type d -print0 | sort -z -u)

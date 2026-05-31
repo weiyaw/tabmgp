@@ -37,8 +37,8 @@ posteriors:
 ```bash
 uv run python run-tabmgp.py "expdir='outputs/example-linreg/name=regression-fixed dim_x=10 noise_std=1.0 data=500 seed=1001'"
 uv run python run-bb.py "expdir='outputs/example-linreg/name=regression-fixed dim_x=10 noise_std=1.0 data=500 seed=1001'"
-uv run python run-copula.py "expdir='outputs/example-linreg/name=regression-fixed dim_x=10 noise_std=1.0 data=500 seed=1001'"
-uv run python run-bayes.py "expdir='outputs/example-linreg/name=regression-fixed dim_x=10 noise_std=1.0 data=500 seed=1001'"
+uv run python run-copula.py "expdir='outputs/example-linreg/name=regression-fixed dim_x=10 noise_std=1.0 data=500 seed=1001'" init=std
+uv run python run-bayes.py "expdir='outputs/example-linreg/name=regression-fixed dim_x=10 noise_std=1.0 data=500 seed=1001'" prior=asymp
 ```
 
 The full paper run is encoded in:

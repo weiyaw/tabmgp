@@ -1,4 +1,5 @@
 import logging
+import os
 from timeit import default_timer as timer
 
 import hydra
@@ -27,22 +28,20 @@ jax.config.update("jax_enable_x64", True)
 @hydra.main(version_base=None, config_path="conf", config_name="copula")
 def main(cfg: DictConfig):
     OmegaConf.resolve(cfg)
+    os.makedirs(f"{cfg.expdir}/logs", exist_ok=True)
+    os.makedirs(f"{cfg.expdir}/configs", exist_ok=True)
+    OmegaConf.save(cfg, f"{cfg.expdir}/configs/{cfg.run_name}.yaml")
+
     logging.info(f"Hydra version: {hydra.__version__}")
     logging.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
 
-    if cfg.init not in ["copula", "tabpfn"]:
-        raise ValueError("cfg.init must be either 'copula' or 'tabpfn'.")
+    if cfg.init not in ["std", "tabpfn"]:
+        raise ValueError("cfg.init must be either 'std' or 'tabpfn'.")
 
     ctx = load_posterior_context(cfg.expdir, cfg.loss)
     method_key(cfg.seed, "copula")
-    post_name = "copula-tabpfn" if cfg.init == "tabpfn" else "copula"
-    label = (
-        "Bivariate Copula with TabPFN initialization"
-        if cfg.init == "tabpfn"
-        else "Bivariate Copula"
-    )
 
-    logging.info(f"Run {label}.")
+    logging.info(f"Run {cfg.run_name}: Copula MGP with {cfg.init} init.")
     start = timer()
     categorical_x = getattr(
         ctx.dgp,
@@ -67,7 +66,9 @@ def main(cfg: DictConfig):
                 cfg.forward_steps,
                 cfg.num_y_grid,
             )
-    elif isinstance(ctx.functional, LogisticRegression) and ctx.functional.n_classes == 2:
+    elif (
+        isinstance(ctx.functional, LogisticRegression) and ctx.functional.n_classes == 2
+    ):
         if cfg.init == "tabpfn":
             full_rollout, _ = copula_classification_tabpfn_init(
                 ctx.dgp.train_data,
@@ -82,8 +83,10 @@ def main(cfg: DictConfig):
                 cfg.rollout_times,
                 cfg.forward_steps,
             )
-    elif isinstance(ctx.functional, LogisticRegression) and ctx.functional.n_classes > 2:
-        logging.info(f"{label} not available for multiclass classification.")
+    elif (
+        isinstance(ctx.functional, LogisticRegression) and ctx.functional.n_classes > 2
+    ):
+        logging.info(f"{cfg.run_name} not available for multiclass classification.")
         full_rollout = None
     else:
         raise NotImplementedError
@@ -92,7 +95,7 @@ def main(cfg: DictConfig):
         return
 
     jax.block_until_ready(full_rollout)
-    logging.info(f"{label} rollout: {timer() - start:.2f} seconds")
+    logging.info(f"{cfg.run_name} rollout: {timer() - start:.2f} seconds")
     full_rollout = ctx.preprocessor.encode_data(full_rollout)
 
     save_mgp_posts(
@@ -100,7 +103,7 @@ def main(cfg: DictConfig):
         full_rollout,
         ctx.init_theta,
         ctx.savedir,
-        post_name,
+        cfg.run_name,
         ctx.n_train,
         cfg.eval_t,
         max_t_override=cfg.forward_steps,
@@ -111,7 +114,7 @@ def main(cfg: DictConfig):
             full_rollout,
             ctx.init_theta,
             ctx.savedir,
-            post_name,
+            cfg.run_name,
             ctx.n_train,
             cfg.resolution,
             cfg.batch,

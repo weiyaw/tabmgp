@@ -39,7 +39,7 @@ def read_trace(path):
     is the number of forward recursion.
     """
 
-    # match bb/tabmgp/copula-x-post.pickle
+    # match bb/tabmgp/copula-x-trace.pickle
     if match := re.search(r".+-(\d+)-(\d+)-(\d+)-trace.pickle", os.path.basename(path)):
         trace, _ = utils.read_from(path)
         info = {
@@ -70,7 +70,7 @@ for id in IDS:
     assert mle_opt.success
     theta_name = data_info.query("name == @data_name")["theta_name"].item()
 
-    for method in ["tabmgp", "bb", "copula"]:
+    for method in ["tabmgp", "bb", "copula-std"]:
         trace_path = utils.get_matching_files(
             f"{path_1001}/posterior-{loss}",
             rf"^{method}-\d+-\d+-\d+-trace\.pickle",
