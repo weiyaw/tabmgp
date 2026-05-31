@@ -38,12 +38,14 @@ def make_pred_rule(cfg: DictConfig, dgp, exp_name: str):
             categorical_features_indices=[],
             n_estimators=cfg.n_estimators,
             average_before_softmax=cfg.average_before_softmax,
+            model_path="tabpfn-v2-regressor.ckpt",
         )
     if exp_name.startswith("classification-fixed"):
         return TabPFNClassifierPPD(
             categorical_features_indices=[],
             n_estimators=cfg.n_estimators,
             average_before_softmax=cfg.average_before_softmax,
+            model_path="tabpfn-v2-classifier.ckpt",
         )
     if exp_name in OPENML_CLASSIFICATION or exp_name in OPENML_BINARY_CLASSIFICATION:
         categorical_features_indices = [
@@ -53,6 +55,7 @@ def make_pred_rule(cfg: DictConfig, dgp, exp_name: str):
             categorical_features_indices=categorical_features_indices,
             n_estimators=cfg.n_estimators,
             average_before_softmax=cfg.average_before_softmax,
+            model_path="tabpfn-v2-classifier.ckpt",
         )
     if exp_name in OPENML_REGRESSION:
         categorical_features_indices = [
@@ -62,6 +65,7 @@ def make_pred_rule(cfg: DictConfig, dgp, exp_name: str):
             categorical_features_indices=categorical_features_indices,
             n_estimators=cfg.n_estimators,
             average_before_softmax=cfg.average_before_softmax,
+            model_path="tabpfn-v2-regressor.ckpt",
         )
     raise ValueError(f"Unknown experiment name: {exp_name}")
 
@@ -91,7 +95,7 @@ def main(cfg: DictConfig):
             pred_rule.sample,
             ctx.dgp.train_data["x"],
             ctx.dgp.train_data["y"],
-            cfg.rollout_length,
+            cfg.forward_steps,
         )
         logging.info(f"Sample {b} takes {timer() - start:.4f} seconds")
         utils.write_to(rollout_path, {"x": x_full, "y": y_full}, verbose=True)

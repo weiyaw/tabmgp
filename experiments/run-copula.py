@@ -56,7 +56,7 @@ def main(cfg: DictConfig):
                 ctx.dgp.train_data,
                 categorical_x,
                 cfg.rollout_times,
-                cfg.rollout_length,
+                cfg.forward_steps,
                 cfg.num_y_grid,
             )
         else:
@@ -64,7 +64,7 @@ def main(cfg: DictConfig):
                 ctx.dgp.train_data,
                 categorical_x,
                 cfg.rollout_times,
-                cfg.rollout_length,
+                cfg.forward_steps,
                 cfg.num_y_grid,
             )
     elif isinstance(ctx.functional, LogisticRegression) and ctx.functional.n_classes == 2:
@@ -73,14 +73,14 @@ def main(cfg: DictConfig):
                 ctx.dgp.train_data,
                 categorical_x,
                 cfg.rollout_times,
-                cfg.rollout_length,
+                cfg.forward_steps,
             )
         else:
             full_rollout, _ = copula_classification(
                 ctx.dgp.train_data,
                 categorical_x,
                 cfg.rollout_times,
-                cfg.rollout_length,
+                cfg.forward_steps,
             )
     elif isinstance(ctx.functional, LogisticRegression) and ctx.functional.n_classes > 2:
         logging.info(f"{label} not available for multiclass classification.")
@@ -103,7 +103,7 @@ def main(cfg: DictConfig):
         post_name,
         ctx.n_train,
         cfg.eval_t,
-        max_t_override=cfg.rollout_length,
+        max_t_override=cfg.forward_steps,
     )
     if cfg.trace and isinstance(ctx.functional, LogisticRegression):
         save_trace(
@@ -116,7 +116,7 @@ def main(cfg: DictConfig):
             cfg.resolution,
             cfg.batch,
             require_final=True,
-            max_t_override=cfg.rollout_length,
+            max_t_override=cfg.forward_steps,
         )
 
 

@@ -5,7 +5,7 @@ defaults:
 n_estimators: 1
 sample_idx: 0
 resolution: 101 # the number of points to evaluate F_n/Q_n
-rollout_length: 1000
+forward_steps: 1000
 data_size: 25
 rollout_x: "truth"
 seed: 999
@@ -20,4 +20,3 @@ hydra:
   sweep:
     dir: ${hydra.run.dir}
     subdir: .
-

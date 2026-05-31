@@ -234,25 +234,36 @@ def main(cfg: DictConfig):
     x_support = unique_rows(x_train)
 
     if name is not None and name.startswith("classification"):
-        pfn_ppd = TabPFNClassifierPPDAcid(categorical_features_indices=[])
+        pfn_ppd = TabPFNClassifierPPDAcid(
+            categorical_features_indices=[],
+            model_path="tabpfn-v2-classifier.ckpt",
+        )
     elif name is not None and name.startswith("regression"):
-        pfn_ppd = TabPFNRegressorPPDAcid(categorical_features_indices=[])
+        pfn_ppd = TabPFNRegressorPPDAcid(
+            categorical_features_indices=[],
+            model_path="tabpfn-v2-regressor.ckpt",
+        )
     elif name in OPENML_CLASSIFICATION + OPENML_BINARY_CLASSIFICATION:
         categorical_features_indices = [
             i for i, c in enumerate(dgp.categorical_x) if c
         ]
         pfn_ppd = TabPFNClassifierPPDAcid(
-            categorical_features_indices=categorical_features_indices
+            categorical_features_indices=categorical_features_indices,
+            model_path="tabpfn-v2-classifier.ckpt",
         )
     elif name in OPENML_REGRESSION:
         categorical_features_indices = [
             i for i, c in enumerate(dgp.categorical_x) if c
         ]
         pfn_ppd = TabPFNRegressorPPDAcid(
-            categorical_features_indices=categorical_features_indices
+            categorical_features_indices=categorical_features_indices,
+            model_path="tabpfn-v2-regressor.ckpt",
         )
     elif name == "gamma":
-        pfn_ppd = TabPFNRegressorPPDAcid(categorical_features_indices=[])
+        pfn_ppd = TabPFNRegressorPPDAcid(
+            categorical_features_indices=[],
+            model_path="tabpfn-v2-regressor.ckpt",
+        )
     else:
         raise ValueError(f"Unknown dgp name {name}")
 

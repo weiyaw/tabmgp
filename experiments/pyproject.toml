@@ -3,30 +3,32 @@ name = "tabmgp"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "blackjax",
     "chex",
     "equinox",
+    "hydra-core",
     "jax",
     "jaxtyping",
+    "matplotlib",
     "numpy",
+    "openml",
     "optax",
+    "pandas",
     "pytest>=9.0.3",
     "scikit-learn",
+    "scipy",
+    "seaborn",
     "tabpfn==6.3.1",
     "torch",
     "tqdm",
+    "ucimlrepo",
 ]
 
 [project.optional-dependencies]
-experiment = [
-    "blackjax",
-    "hydra-core",
-    "matplotlib",
-    "openml",
-    "pandas",
-    "scipy",
-    "seaborn",
-    "ucimlrepo",
-]
 dev = [
     "ipykernel>=7.2.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

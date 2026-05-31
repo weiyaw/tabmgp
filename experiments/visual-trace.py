@@ -13,16 +13,20 @@ from optimizer import Diagnostics, OptResult
 import os
 import re
 import ast
+from pathlib import Path
 
-from plot_settings import DATES, TITLE, LINEAR_REGRESSION_DATES, LOGISTIC_REGRESSION_DATES
+from plot_settings import IDS, TITLE, LINEAR_REGRESSION_IDS, LOGISTIC_REGRESSION_IDS
 
 jax.config.update("jax_enable_x64", True)
 
 
-data_info = pd.read_csv("./data_info.csv")
+BASE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BASE_DIR.parent
+
+data_info = pd.read_csv(BASE_DIR / "data_info.csv")
 data_info["theta_name"] = data_info["theta_name"].apply(ast.literal_eval)
-output_dir = "../outputs"
-savedir = "../paper/images"
+output_dir = str(BASE_DIR / "outputs")
+savedir = str(REPO_ROOT.parent / "paper" / "images")
 loss = "likelihood"
 SAVE_PLOTS = True
 
@@ -51,11 +55,11 @@ def read_trace(path):
 # %%
 # Standard trace plots for all methods and setups (only for the realisation of seed=1001)
 
-for date in DATES:
-    print(date)
-    path_1001 = utils.get_matching_dirs(f"{output_dir}/{date}", "seed=1001")
+for id in IDS:
+    print(id)
+    path_1001 = utils.get_matching_dirs(f"{output_dir}/{id}", "seed=1001")
     assert len(path_1001) == 1, (
-        f"Expected exactly one path for seed=1001 in {date}, but found {len(path_1001)}."
+        f"Expected exactly one path for seed=1001 in {id}, but found {len(path_1001)}."
     )
     path_1001 = path_1001[0]
     data_name = get_data_name(path_1001)
@@ -74,7 +78,7 @@ for date in DATES:
         if len(trace_path) == 0:
             continue
         assert len(trace_path) == 1, (
-            f"Expected exactly one trace file for {method} in {date}, but found {len(trace_path)}."
+            f"Expected exactly one trace file for {method} in {id}, but found {len(trace_path)}."
         )
         trace, trace_info = read_trace(trace_path[0])
 
@@ -157,11 +161,11 @@ for date in DATES:
 # %%
 # Expected l1-norm convergence plot (all setups)
 fig = plt.figure(figsize=(7, 3))
-for date in DATES:
-    print(date)
-    path_1001 = utils.get_matching_dirs(f"{output_dir}/{date}", "seed=1001")
+for id in IDS:
+    print(id)
+    path_1001 = utils.get_matching_dirs(f"{output_dir}/{id}", "seed=1001")
     assert len(path_1001) == 1, (
-        f"Expected exactly one path for seed=1001 in {date}, but found {len(path_1001)}."
+        f"Expected exactly one path for seed=1001 in {id}, but found {len(path_1001)}."
     )
     path_1001 = path_1001[0]
     data_name = utils.get_data_name(path_1001)
@@ -173,7 +177,7 @@ for date in DATES:
     if len(trace_path) == 0:
         continue
     assert len(trace_path) == 1, (
-        f"Expected exactly one trace file for tabmgp in {date}, but found {len(trace_path)}."
+        f"Expected exactly one trace file for tabmgp in {id}, but found {len(trace_path)}."
     )
     trace, trace_info = read_trace(trace_path[0])
     l1 = np.mean(np.abs((trace - trace[0])), axis=-1)
@@ -200,12 +204,12 @@ else:
 # Expected l1-norm convergence plot (individual setups)
 for method in ["tabmgp", "bb"]:
     # Set squeeze=False so 'axes' is always a 2D array
-    # for date, data_name in TITLE.items():
-    for dates, dates_tag in [
-        (LINEAR_REGRESSION_DATES, "linear"),
-        (LOGISTIC_REGRESSION_DATES, "logistic"),
+    # for id, data_name in TITLE.items():
+    for ids, ids_tag in [
+        (LINEAR_REGRESSION_IDS, "linear"),
+        (LOGISTIC_REGRESSION_IDS, "logistic"),
     ]:
-        n_plots = len(dates)
+        n_plots = len(ids)
         ncols = 4
         nrows = (n_plots + ncols - 1) // ncols
         fig, axes = plt.subplots(
@@ -216,11 +220,11 @@ for method in ["tabmgp", "bb"]:
         axes = axes.flatten()
         plot_idx = 0  # Use this index to track which axis to plot on
 
-        for date in dates:
-            print(date)
-            path_1001 = utils.get_matching_dirs(f"{output_dir}/{date}", "seed=1001")
+        for id in ids:
+            print(id)
+            path_1001 = utils.get_matching_dirs(f"{output_dir}/{id}", "seed=1001")
             assert len(path_1001) == 1, (
-                f"Expected exactly one path for seed=1001 in {date}, but found {len(path_1001)}."
+                f"Expected exactly one path for seed=1001 in {id}, but found {len(path_1001)}."
             )
             path_1001 = path_1001[0]
             trace_path = utils.get_matching_files(
@@ -230,7 +234,7 @@ for method in ["tabmgp", "bb"]:
             if len(trace_path) == 0:
                 continue
             assert len(trace_path) == 1, (
-                f"Expected exactly one trace file for {method} in {date}, but found {len(trace_path)}."
+                f"Expected exactly one trace file for {method} in {id}, but found {len(trace_path)}."
             )
             trace, trace_info = read_trace(trace_path[0])
             if trace is None:
@@ -250,7 +254,7 @@ for method in ["tabmgp", "bb"]:
             ax.set_ylim(bottom=0, top=q3 + 2 * iqr)
             ax.set_ylabel(r"Scaled $L_1$")
             ax.set_xlabel("N")
-            ax.set_title(TITLE[date])
+            ax.set_title(TITLE[id])
             ax.axvline(x=N_idx[0], linestyle="--", color="grey", linewidth=1.0)
             plot_idx += 1
 
@@ -260,7 +264,7 @@ for method in ["tabmgp", "bb"]:
         plt.tight_layout()
         if SAVE_PLOTS:
             fig.savefig(
-                f"{savedir}/l1-individual-0th-{dates_tag}-{method}.pdf",
+                f"{savedir}/l1-individual-0th-{ids_tag}-{method}.pdf",
                 bbox_inches="tight",
             )
         else:
@@ -268,7 +272,7 @@ for method in ["tabmgp", "bb"]:
 
 # %%
 # Extra long trace plots for selected setups
-EXTRA_LONG_DATES = [
+EXTRA_LONG_IDS = [
     "longroll-04",
     "longroll-05",
     "longroll-06",
@@ -288,7 +292,7 @@ EXTRA_LONG_TITLE = {
 # %%
 
 # Extra long L1-norm convergence plot for selected setups (individual L1)
-n_plots = len(EXTRA_LONG_DATES)
+n_plots = len(EXTRA_LONG_IDS)
 ncols = 3
 nrows = (n_plots + ncols - 1) // ncols
 for method in ["tabmgp"]:
@@ -301,11 +305,11 @@ for method in ["tabmgp"]:
     axes = axes.flatten()
     plot_idx = 0  # Use this index to track which axis to plot on
 
-    for date, data_name in EXTRA_LONG_TITLE.items():
-        print(date)
-        path_1001 = utils.get_matching_dirs(f"{output_dir}/{date}", "seed=1001")
+    for id, data_name in EXTRA_LONG_TITLE.items():
+        print(id)
+        path_1001 = utils.get_matching_dirs(f"{output_dir}/{id}", "seed=1001")
         assert len(path_1001) == 1, (
-            f"Expected exactly one path for seed=1001 in {date}, but found {len(path_1001)}."
+            f"Expected exactly one path for seed=1001 in {id}, but found {len(path_1001)}."
         )
         path_1001 = path_1001[0]
         trace_path = utils.get_matching_files(
@@ -315,7 +319,7 @@ for method in ["tabmgp"]:
         if len(trace_path) == 0:
             continue
         assert len(trace_path) == 1, (
-            f"Expected exactly one trace file for {method} in {date}, but found {len(trace_path)}."
+            f"Expected exactly one trace file for {method} in {id}, but found {len(trace_path)}."
         )
         trace, trace_info = read_trace(trace_path[0])
         if trace is None:
@@ -335,7 +339,7 @@ for method in ["tabmgp"]:
         ax.set_ylim(bottom=0, top=q3 + 2 * iqr)
         ax.set_ylabel(r"Scaled $L_1$")
         ax.set_xlabel("N")
-        ax.set_title(EXTRA_LONG_TITLE[date])
+        ax.set_title(EXTRA_LONG_TITLE[id])
         ax.axvline(x=N_idx[0], linestyle="--", color="grey", linewidth=1.0)
         plot_idx += 1
 
@@ -355,11 +359,11 @@ for method in ["tabmgp"]:
 
 # Extra long L1-norm convergence plot for selected setups (expected L1)
 fig = plt.figure(figsize=(7, 3))
-for date in EXTRA_LONG_DATES:
-    print(date)
-    path_1001 = utils.get_matching_dirs(f"{output_dir}/{date}", "seed=1001")
+for id in EXTRA_LONG_IDS:
+    print(id)
+    path_1001 = utils.get_matching_dirs(f"{output_dir}/{id}", "seed=1001")
     assert len(path_1001) == 1, (
-        f"Expected exactly one path for seed=1001 in {date}, but found {len(path_1001)}."
+        f"Expected exactly one path for seed=1001 in {id}, but found {len(path_1001)}."
     )
     path_1001 = path_1001[0]
     data_name = utils.get_data_name(path_1001)
@@ -371,7 +375,7 @@ for date in EXTRA_LONG_DATES:
     if len(trace_path) == 0:
         continue
     assert len(trace_path) == 1, (
-        f"Expected exactly one trace file for tabmgp in {date}, but found {len(trace_path)}."
+        f"Expected exactly one trace file for tabmgp in {id}, but found {len(trace_path)}."
     )
     trace, trace_info = read_trace(trace_path[0])
     l1 = np.mean(np.abs((trace - trace[0])), axis=-1)
@@ -397,11 +401,11 @@ else:
 
 # Expected l1-norm convergence plot, over 20 realisation of datasets
 for method in ["tabmgp"]:
-    for dates, dates_tag in [
-        (LINEAR_REGRESSION_DATES, "linear"),
-        (LOGISTIC_REGRESSION_DATES, "logistic"),
+    for ids, ids_tag in [
+        (LINEAR_REGRESSION_IDS, "linear"),
+        (LOGISTIC_REGRESSION_IDS, "logistic"),
     ]:
-        n_plots = len(dates)
+        n_plots = len(ids)
         ncols = 4
         nrows = (n_plots + ncols - 1) // ncols
 
@@ -414,20 +418,20 @@ for method in ["tabmgp"]:
         axes = axes.flatten()
         plot_idx = 0  # Use this index to track which axis to plot on
 
-        for date in dates:
-            print(date)
+        for id in ids:
+            print(id)
             # seed that matches 1001, 1002, ..., 1020
             paths = utils.get_matching_dirs(
-                f"{output_dir}/{date}", "seed=10(0[1-9]|1[0-9]|20)"
+                f"{output_dir}/{id}", "seed=10(0[1-9]|1[0-9]|20)"
             )
             trace_path = utils.get_matching_files(
-                f"{output_dir}/{date}",
+                f"{output_dir}/{id}",
                 rf"^{method}-\d+-\d+-\d+-trace\.pickle",
                 recursive=True,
             )
             trace_path = [s for s in trace_path if "posterior-likelihood" in s]
             assert len(trace_path) == 20, (
-                f"Expected exactly 20 paths for seeds 1001-1020 in {date}, but found {len(trace_path)}."
+                f"Expected exactly 20 paths for seeds 1001-1020 in {id}, but found {len(trace_path)}."
             )
 
             exp_l1 = []
@@ -450,7 +454,7 @@ for method in ["tabmgp"]:
             ax.set_ylim(bottom=0, top=q3 + 2 * iqr)
             ax.set_ylabel(r"Scaled $L_1$")
             ax.set_xlabel("N")
-            ax.set_title(TITLE[date])
+            ax.set_title(TITLE[id])
             ax.axvline(x=N_idx[0], linestyle="--", color="grey", linewidth=1.0)
             plot_idx += 1
 
@@ -460,7 +464,7 @@ for method in ["tabmgp"]:
         plt.tight_layout()
         if SAVE_PLOTS:
             fig.savefig(
-                f"{savedir}/l1-expected-20reps-{dates_tag}-{method}.pdf",
+                f"{savedir}/l1-expected-20reps-{ids_tag}-{method}.pdf",
                 bbox_inches="tight",
             )
         else:

@@ -5,7 +5,7 @@ seed: 999
 
 init: copula
 rollout_times: 100
-rollout_length: 2000
+forward_steps: 2000
 num_y_grid: 100
 
 eval_t: [250, 500, 750, 1000, 2000, 3000, 4000, 5000]

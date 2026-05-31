@@ -34,7 +34,7 @@ class TabPFNRegressorPPD(TabPFNRegressor):
         average_before_softmax: bool = False,
         softmax_temperature: float = 1.0,
         fit_mode: str = "low_memory",
-        model_path: str = "tabpfn-v2-regressor.ckpt",
+        model_path: str | None = None,
         **kwargs,
     ):
         super().__init__(
@@ -111,7 +111,7 @@ class TabPFNClassifierPPD(TabPFNClassifier):
         average_before_softmax: bool = False,
         softmax_temperature: float = 1.0,
         fit_mode: str = "low_memory",
-        model_path: str = "tabpfn-v2-classifier.ckpt",
+        model_path: str | None = None,
         **kwargs,
     ):
         super().__init__(
@@ -180,7 +180,7 @@ def forward_sampling(
     one_step_ahead: Callable[..., np.ndarray],
     x_train: np.ndarray,
     y_train: np.ndarray,
-    rollout_length: int,
+    forward_steps: int,
     *,
     rng: np.random.Generator | int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -191,7 +191,7 @@ def forward_sampling(
             all previous x/y observations, and an optional keyword-only rng.
         x_train: Observed feature matrix used to seed the rollout.
         y_train: Observed targets aligned with x_train.
-        rollout_length: Number of additional samples to generate.
+        forward_steps: Number of additional samples to generate.
         rng: Optional NumPy random source. May be None, an integer seed, or an
             np.random.Generator. Passing a Generator advances its stream;
             passing the same integer seed repeats the same rollout.
@@ -203,10 +203,10 @@ def forward_sampling(
 
     assert x_train.shape[0] == y_train.shape[0]
     dim_x = x_train.shape[1]
-    x_full = np.concatenate([x_train, np.full((rollout_length, dim_x), -1.0)])
-    y_full = np.concatenate([y_train, np.full(rollout_length, -1.0)])
+    x_full = np.concatenate([x_train, np.full((forward_steps, dim_x), -1.0)])
+    y_full = np.concatenate([y_train, np.full(forward_steps, -1.0)])
 
-    for i in tqdm(range(len(x_train), len(x_train) + rollout_length)):
+    for i in tqdm(range(len(x_train), len(x_train) + forward_steps)):
         # This loop performs forward sampling
         x_prev = x_full[:i]  # contains i number of data points
         y_prev = y_full[:i]  # contains i number of data points

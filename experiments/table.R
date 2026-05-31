@@ -2,6 +2,12 @@ library(tidyverse)
 library(glue)
 library(kableExtra)
 
+args <- commandArgs(trailingOnly = FALSE)
+file_arg <- "--file="
+script_arg <- args[startsWith(args, file_arg)]
+if (length(script_arg) > 0) {
+  setwd(dirname(normalizePath(sub(file_arg, "", script_arg[[1]]))))
+}
 
 synthetic_order <- c(
   "regression-standard",
@@ -134,7 +140,7 @@ bind_rows(syn_class, real_class) |>
 ## SETUP INFO
 data_info <- read_csv("data_info.csv") |>
   rename(n_train = training_size, data = name) |>
-  select(-c(date, x_dtype)) |>
+  select(-c(id, x_dtype)) |>
   mutate(np_ratio = zapsmall(n_train / dim_theta, 2))
 
 

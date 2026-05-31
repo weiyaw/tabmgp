@@ -9,7 +9,7 @@ from scipy.special import gamma
 
 import utils
 from utils import (
-    get_date_part,
+    get_id_part,
     get_data_size,
     get_resample_x,
     format_decimal,
@@ -23,7 +23,7 @@ from functional import (
 )
 
 from experiment_setup import load_experiment, get_experiment_paths
-from plot_settings import DATES
+from plot_settings import IDS
 
 from optimizer import Diagnostics, OptResult
 
@@ -40,12 +40,16 @@ from typing import Any
 import os
 import re
 import ast
+from pathlib import Path
 
 KeyArray = jax.Array
 PyTree = Any
 
 jax.config.update("jax_enable_x64", True)
 np.set_printoptions(linewidth=np.inf)
+
+BASE_DIR = Path(__file__).resolve().parent
+TABLE_DIR = BASE_DIR / "table"
 
 
 def get_functional(experiment):
@@ -158,15 +162,15 @@ def get_algo_success_rate(diagnostic_ls):
 
 
 # The directory that contains all the experiment outputs
-output_dir = "../outputs"
+output_dir = str(BASE_DIR / "outputs")
 
 # %%
 # Joint credible set coverage
 loss = "likelihood"
 rows = []
-for date in DATES:
-    print(f"Date: {date}")
-    all_paths = get_experiment_paths(f"{output_dir}/{date}")
+for id in IDS:
+    print(f"ID: {id}")
+    all_paths = get_experiment_paths(f"{output_dir}/{id}")
     all_dgps = [utils.read_from(f"{p}/dgp.pickle") for p in all_paths]
 
     preprocessor, functional, theta_true, _ = load_experiment(all_paths[0], loss=loss)
@@ -221,7 +225,7 @@ for date in DATES:
                 "dim_x": dim_x,
                 "algo_success_rate": format_decimal(algo_rate, 2),
                 "avg_rank_x": format_decimal(np.mean(rank_x_ls), 2),
-                "date": get_date_part(all_paths[0]),
+                "id": get_id_part(all_paths[0]),
             }
             print(row)
             rows.append(row)
@@ -243,7 +247,7 @@ for date in DATES:
             "post_cov_rank_mean": format_decimal(np.mean(post_cov_rank), 2),
             "training_set_size": get_data_size(all_paths[0]),
             "dim_x": dim_x,
-            "date": get_date_part(all_paths[0]),
+            "id": get_id_part(all_paths[0]),
         }
         print(row)
         rows.append(row)
@@ -253,22 +257,22 @@ df = pd.DataFrame(rows)
 df["max_T"] = df["T"].isna() | (
     df["T"] == df.groupby(["data", "post_name"])["T"].transform("max")
 )
-os.makedirs("table", exist_ok=True)
-df.to_csv("./table/joint-coverage.csv")
+os.makedirs(TABLE_DIR, exist_ok=True)
+df.to_csv(TABLE_DIR / "joint-coverage.csv")
 
 # %%
 # Marginal credible interval coverage
 
 # Setup the variable name for each dimension of theta
-data_info = pd.read_csv("./data_info.csv").rename(columns={"name": "data"})
+data_info = pd.read_csv(BASE_DIR / "data_info.csv").rename(columns={"name": "data"})
 data_info["theta_name"] = data_info["theta_name"].apply(ast.literal_eval)
 
 ALPHA = 0.05
 loss = "likelihood"
 marginal_ci_coverage_ls = []
-for date in DATES:
-    print(f"Date: {date}")
-    all_paths = get_experiment_paths(f"{output_dir}/{date}")
+for id in IDS:
+    print(f"ID: {id}")
+    all_paths = get_experiment_paths(f"{output_dir}/{id}")
     data_name = utils.get_data_name(all_paths[0])
     theta_name = data_info[data_info["data"] == data_name]["theta_name"].iloc[0]
     _, _, theta_true, _ = load_experiment(all_paths[0], loss=loss)
@@ -307,8 +311,8 @@ df["max_T"] = df["T"].isna() | (
     df["T"] == df.groupby(["data", "post_name"])["T"].transform("max")
 )
 
-os.makedirs("table", exist_ok=True)
-df.to_csv("table/marginal-coverage.csv", index=False)
+os.makedirs(TABLE_DIR, exist_ok=True)
+df.to_csv(TABLE_DIR / "marginal-coverage.csv", index=False)
 
 
 # %%
@@ -316,9 +320,9 @@ df.to_csv("table/marginal-coverage.csv", index=False)
 # Joint credible set coverage for abalone semi-synthetic data
 loss = "likelihood"
 rows = []
-for date in ["2025-09-12", "2025-09-13"]:
-    print(f"Date: {date}")
-    all_paths = get_experiment_paths(f"{output_dir}/{date}")
+for id in ["2025-09-12", "2025-09-13"]:
+    print(f"ID: {id}")
+    all_paths = get_experiment_paths(f"{output_dir}/{id}")
     all_dgps = [utils.read_from(f"{p}/dgp.pickle") for p in all_paths]
 
     preprocessor, functional, theta_true, _ = load_experiment(all_paths[0], loss=loss)
@@ -373,7 +377,7 @@ for date in ["2025-09-12", "2025-09-13"]:
                 "dim_x": dim_x,
                 "algo_success_rate": format_decimal(algo_rate, 2),
                 "avg_rank_x": format_decimal(np.mean(rank_x_ls), 2),
-                "date": get_date_part(all_paths[0]),
+                "id": get_id_part(all_paths[0]),
             }
             print(row)
             rows.append(row)
@@ -395,7 +399,7 @@ for date in ["2025-09-12", "2025-09-13"]:
             "post_cov_rank_mean": format_decimal(np.mean(post_cov_rank), 2),
             "training_set_size": get_data_size(all_paths[0]),
             "dim_x": dim_x,
-            "date": get_date_part(all_paths[0]),
+            "id": get_id_part(all_paths[0]),
         }
         print(row)
         rows.append(row)
@@ -413,15 +417,15 @@ df[(df["max_T"])]
 # Marginal credible interval coverage (semi-synthetic phoneme data)
 
 # Setup the variable name for each dimension of theta
-data_info = pd.read_csv("./data_info.csv").rename(columns={"name": "data"})
+data_info = pd.read_csv(BASE_DIR / "data_info.csv").rename(columns={"name": "data"})
 data_info["theta_name"] = data_info["theta_name"].apply(ast.literal_eval)
 
 ALPHA = 0.05
 loss = "likelihood"
 marginal_ci_coverage_ls = []
-for date in ["2025-09-13"]:
-    print(f"Date: {date}")
-    all_paths = get_experiment_paths(f"{output_dir}/{date}")
+for id in ["2025-09-13"]:
+    print(f"ID: {id}")
+    all_paths = get_experiment_paths(f"{output_dir}/{id}")
     all_dgps = [utils.read_from(f"{p}/dgp.pickle") for p in all_paths]
     data_name = get_data_name(all_paths[0])
     theta_name = data_info[data_info["data"] == "phoneme"]["theta_name"].iloc[0]

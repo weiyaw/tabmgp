@@ -39,12 +39,12 @@ jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision for JAX
 
 # Bayesian bootstrap
 def bootstrap(
-    key: PRNGKeyArray, data: dict[str, ArrayLike], rollout_length: int
+    key: PRNGKeyArray, data: dict[str, ArrayLike], forward_steps: int
 ) -> dict[str, ArrayLike]:
     # Bayesian bootstrap
     n_data = utils.get_n_data(data)
     data_idx = jnp.arange(n_data, dtype=jnp.int64)
-    final_idx = jnp.concatenate([data_idx, jnp.full((rollout_length,), -1)])
+    final_idx = jnp.concatenate([data_idx, jnp.full((forward_steps,), -1)])
 
     def body_fn(i, carry):
         key, final_idx = carry
@@ -53,21 +53,21 @@ def bootstrap(
         final_idx = final_idx.at[n_data + i].set(final_idx[idx])
         return key, final_idx
 
-    key, final_idx = jax.lax.fori_loop(0, rollout_length, body_fn, (key, final_idx))
+    key, final_idx = jax.lax.fori_loop(0, forward_steps, body_fn, (key, final_idx))
     bootstrap_data = jax.tree.map(lambda x: x[final_idx], data)
     return bootstrap_data
 
 
-@partial(jax.jit, static_argnames=["rollout_length", "rollout_times"])
+@partial(jax.jit, static_argnames=["forward_steps", "rollout_times"])
 def bootstrap_many_samples(
     key: PRNGKeyArray,
     data: dict[str, ArrayLike],
     rollout_times: int,
-    rollout_length: int,
+    forward_steps: int,
 ) -> dict[str, ArrayLike]:
     # Bayesian bootstrap many times, each time with different keys
     keys = vmap(jax.random.fold_in, (None, 0))(key, jnp.arange(0, rollout_times))
-    return vmap(lambda k: bootstrap(k, data, rollout_length))(keys)
+    return vmap(lambda k: bootstrap(k, data, forward_steps))(keys)
 
 
 # Standard Bayes

@@ -4,14 +4,23 @@ import re
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import logsumexp
+from pathlib import Path
 
 import utils
 
 # %%
 # PLOT ACID RESULTS FOR CLASSIFICATION
 
-acid_dir = f"../outputs/2025-06-97/name=classification-fixed dim_x=2 resample_x=bb data=100 seed=1001/acid"
-image_dir = "../paper/images/"
+BASE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BASE_DIR.parent
+acid_dir = str(
+    BASE_DIR
+    / "outputs"
+    / "2025-06-97"
+    / "name=classification-fixed dim_x=2 resample_x=bb data=100 seed=1001"
+    / "acid"
+)
+image_dir = str(REPO_ROOT.parent / "paper" / "images")
 SAVE_PLOTS = True
 
 acid_eval_dir = [

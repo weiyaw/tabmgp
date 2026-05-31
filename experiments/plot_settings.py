@@ -1,6 +1,6 @@
 import seaborn as sns
 
-DATES = [
+IDS = [
     "logreg-01",
     "logreg-02",
     "logreg-03",
@@ -33,7 +33,7 @@ DATES = [
     "logreg-real-10",
 ]
 
-LINEAR_REGRESSION_DATES = [
+LINEAR_REGRESSION_IDS = [
     "linreg-01",
     "linreg-05",
     "linreg-06",
@@ -52,7 +52,7 @@ LINEAR_REGRESSION_DATES = [
     "linreg-real-07",
 ]
 
-LOGISTIC_REGRESSION_DATES = [
+LOGISTIC_REGRESSION_IDS = [
     "logreg-01",
     "logreg-02",
     "logreg-03",

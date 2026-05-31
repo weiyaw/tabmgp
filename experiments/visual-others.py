@@ -17,16 +17,20 @@ from credible_set import marginal_credible_interval
 import os
 import re
 import ast
+from pathlib import Path
 
-from plot_settings import DATES, COLOR_PALETTE, POSTERIOR_NAMES, MARKER_SHAPES
+from plot_settings import IDS, COLOR_PALETTE, POSTERIOR_NAMES, MARKER_SHAPES
 
 jax.config.update("jax_enable_x64", True)
 
 
-data_info = pd.read_csv("./data_info.csv")
+BASE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BASE_DIR.parent
+
+data_info = pd.read_csv(BASE_DIR / "data_info.csv")
 data_info["theta_name"] = data_info["theta_name"].apply(ast.literal_eval)
-output_dir = "../outputs"
-savedir = "../paper/images"
+output_dir = str(BASE_DIR / "outputs")
+savedir = str(REPO_ROOT.parent / "paper" / "images")
 loss = "likelihood"
 SAVE_PLOTS = True
 
@@ -63,9 +67,9 @@ def read_max_T_post(path, method, loss):
 # %%
 # Histogram of the posterior for all methods and setups
 
-for date in DATES:
-    print(date)
-    all_paths = get_experiment_paths(f"{output_dir}/{date}")
+for id in IDS:
+    print(id)
+    all_paths = get_experiment_paths(f"{output_dir}/{id}")
     data_name = utils.get_data_name(all_paths[0])
     _, functional, theta_true, processed_data = load_experiment(
         all_paths[0], loss="likelihood"
@@ -270,7 +274,7 @@ else:
 # Boxplot of the marginal coverage (synthetic setups)
 
 # Run table.py to get this table
-coverage = pd.read_csv("table/marginal-coverage.csv")
+coverage = pd.read_csv(BASE_DIR / "table" / "marginal-coverage.csv")
 
 # only include relevant posteriors
 coverage = coverage[coverage["post_name"].isin(POSTERIOR_NAMES)]
@@ -284,8 +288,8 @@ data_info = data_info.sort_values(
 synthetic_data = data_info[data_info["name"].str.contains("regression|classification")][
     "name"
 ]
-regression_data = data_info.query("date.str.startswith('linreg-real-')")["name"]
-classification_data = data_info.query("date.str.startswith('logreg-real-')")["name"]
+regression_data = data_info.query("id.str.startswith('linreg-real-')")["name"]
+classification_data = data_info.query("id.str.startswith('logreg-real-')")["name"]
 
 synthetic_data_xtick_label = {
     "regression-standard": r"$N(0, 1)$",

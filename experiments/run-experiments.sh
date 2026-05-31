@@ -1,5 +1,10 @@
 #!/bin/bash
 
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR}"
+
 for seed in {1001..1100}; do
     # Synthetic linear regression setup (coverage)
     python prepare-dgp.py id="linreg-01" data_size=20 dgp=regression-fixed seed=${seed}
@@ -81,7 +86,7 @@ while read -r -d $'\0' path; do
 
     case "$path" in
         */longroll-*/*)
-            tabmgp_args+=("rollout_length=1000")
+            tabmgp_args+=("forward_steps=1000")
             ;;
     esac
 

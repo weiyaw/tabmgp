@@ -15,15 +15,17 @@ from credible_set import joint_credible_set, coverage_probability
 jax.config.update("jax_enable_x64", True)
 
 # %%
-# Coverage of TabMGP at various rollout length (N=250,500,750,1000)
+# Coverage of TabMGP at various forward steps (N=250,500,750,1000)
 LOSS = "likelihood"
 ALPHA = 0.05
-OUTPUT_DIR = Path("../outputs")
-SAVE_DIR = Path("../paper/images")
-TABLE_DIR = Path("./table")
+BASE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BASE_DIR.parent
+OUTPUT_DIR = BASE_DIR / "outputs"
+SAVE_DIR = REPO_ROOT.parent / "paper" / "images"
+TABLE_DIR = BASE_DIR / "table"
 SAVE_PLOTS = True
 
-DATE_TITLE = {
+ID_TITLE = {
 	"longroll-04": "Classification GMM $a=0$",
 	# "longroll-05": "Classification GMM $a=-1$",
 	# "longroll-06": "Classification GMM $a=-2$",
@@ -35,7 +37,7 @@ DATE_TITLE = {
 
 def read_tabmgp_posteriors(seed_path, loss):
 	"""
-	Return {rollout_length: posterior_samples} for one seed directory.
+	Return {forward_steps: posterior_samples} for one seed directory.
 	"""
 	posterior = {}
 	for root, _, files in os.walk(seed_path):
@@ -43,8 +45,8 @@ def read_tabmgp_posteriors(seed_path, loss):
 			continue
 		for filename in sorted(files):
 			if match := re.search(r"^tabmgp-(\d+)-post.pickle", filename):
-				rollout_len = int(match.group(1))
-				posterior[rollout_len] = utils.read_from(f"{root}/{filename}")[0]
+				forward_steps = int(match.group(1))
+				posterior[forward_steps] = utils.read_from(f"{root}/{filename}")[0]
 	return posterior
 
 
@@ -55,16 +57,16 @@ def compute_joint_stats(posteriors, alpha, true_value, cov_type="diag"):
 	return float(rate), float(np.median(post_cov_trace))
 
 
-date_dirs = [date for date in DATE_TITLE if (OUTPUT_DIR / date).exists()]
+id_dirs = [id for id in ID_TITLE if (OUTPUT_DIR / id).exists()]
 
 rows = []
-for date in date_dirs:
-	all_paths = get_experiment_paths(f"{OUTPUT_DIR}/{date}")
+for id in id_dirs:
+	all_paths = get_experiment_paths(f"{OUTPUT_DIR}/{id}")
 	if not all_paths:
 		continue
 
 	if not Path(all_paths[0], "dgp.pickle").exists():
-		print(f"Skipping {date}: missing dgp.pickle")
+		print(f"Skipping {id}: missing dgp.pickle")
 		continue
 
 	data_name = utils.get_data_name(all_paths[0])
@@ -75,10 +77,10 @@ for date in date_dirs:
 	if not non_empty:
 		continue
 
-	rollout_lengths = sorted(set.intersection(*non_empty))
+	forward_steps_values = sorted(set.intersection(*non_empty))
 
-	for rollout_len in rollout_lengths:
-		posteriors = [p[rollout_len] for p in all_posteriors if rollout_len in p]
+	for forward_steps in forward_steps_values:
+		posteriors = [p[forward_steps] for p in all_posteriors if forward_steps in p]
 		if not posteriors:
 			continue
 
@@ -88,9 +90,9 @@ for date in date_dirs:
 
 		rows.append(
 			{
-				"date": date,
+				"id": id,
 				"data": data_name,
-				"N - n": rollout_len,
+				"N - n": forward_steps,
 				"coverage": coverage,
 				"size": post_cov_trace_median,
 				"ideal_coverage": 1 - ALPHA,
@@ -102,7 +104,7 @@ coverage_df = pd.DataFrame(rows)
 if coverage_df.empty:
 	raise RuntimeError("No TabMGP posterior files found in longroll-* outputs.")
 
-coverage_df = coverage_df.sort_values(["date", "N - n"]).reset_index(drop=True)
+coverage_df = coverage_df.sort_values(["id", "N - n"]).reset_index(drop=True)
 # TABLE_DIR.mkdir(parents=True, exist_ok=True)
 # coverage_df.to_csv(TABLE_DIR / "tabmgp-rollout-coverage.csv", index=False)
 
@@ -110,8 +112,8 @@ coverage_df = coverage_df.sort_values(["date", "N - n"]).reset_index(drop=True)
 # %%
 # Plot rollout-length coverage for each longroll setup
 sns.set_theme(style="whitegrid")
-plot_dates = coverage_df["date"].drop_duplicates().tolist()
-n_plots = len(plot_dates)
+plot_ids = coverage_df["id"].drop_duplicates().tolist()
+n_plots = len(plot_ids)
 ncols = n_plots
 nrows = 2
 
@@ -123,21 +125,21 @@ fig, axes = plt.subplots(
 	sharex="col",
 )
 
-for i, date in enumerate(plot_dates):
-	date_df = coverage_df[coverage_df["date"] == date].sort_values("N - n")
-	x = date_df["N - n"]
+for i, id in enumerate(plot_ids):
+	id_df = coverage_df[coverage_df["id"] == id].sort_values("N - n")
+	x = id_df["N - n"]
 
 	# Top row: coverage
 	ax_cov = axes[0, i]
 	ax_cov.plot(
 		x,
-		date_df["coverage"],
+		id_df["coverage"],
 		marker="o",
 		linewidth=2,
 		color=sns.color_palette("colorblind")[0],
 	)
 	ax_cov.axhline(1 - ALPHA, linestyle="--", color="black", linewidth=1)
-	ax_cov.set_title(DATE_TITLE.get(date, date_df["data"].iloc[0]))
+	ax_cov.set_title(ID_TITLE.get(id, id_df["data"].iloc[0]))
 	ax_cov.set_ylim(0.8, 1.02)
 	ax_cov.set_xticks(sorted(x.unique()))
 	if i == 0:
@@ -147,7 +149,7 @@ for i, date in enumerate(plot_dates):
 	ax_size = axes[1, i]
 	ax_size.plot(
 		x,
-		date_df["size"],
+		id_df["size"],
 		marker="o",
 		linewidth=2,
 		color=sns.color_palette("colorblind")[1],

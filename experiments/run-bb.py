@@ -32,12 +32,12 @@ def main(cfg: DictConfig):
     start = timer()
     _, subkey = jax.random.split(bb_key)
     full_rollout = baseline.bootstrap_many_samples(
-        subkey, ctx.train_data, cfg.rollout_times, cfg.rollout_length
+        subkey, ctx.train_data, cfg.rollout_times, cfg.forward_steps
     )
     logging.info(f"Shape of BB rollout: {utils.tree_shape(full_rollout)}")
     chex.assert_tree_shape_prefix(
         full_rollout,
-        (cfg.rollout_times, cfg.rollout_length + ctx.n_train),
+        (cfg.rollout_times, cfg.forward_steps + ctx.n_train),
     )
     jax.block_until_ready(full_rollout)
     logging.info(f"BB rollout: {timer() - start:.2f} seconds")

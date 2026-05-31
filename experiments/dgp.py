@@ -1,5 +1,4 @@
 import logging
-import math
 import os
 from abc import abstractmethod
 from typing import Any
@@ -1040,183 +1039,6 @@ class DGPRegressionFixedNonNormalError(DGPSyntheticFixed):
         }
 
 
-class DGPSynthetic(DGP):
-
-    def __init__(self, key: PRNGKeyArray, n: int, dim_x: int):
-        self.input_key = key
-        key, prior_key, data_key = jax.random.split(key, 3)
-        # Draw from a N(0, 1) prior
-        self.beta0 = np.asarray(
-            jax.random.normal(prior_key, shape=(dim_x,)), dtype=np.float64
-        )
-        self.dim_x = dim_x
-        self.train_data = self.get_data(data_key, n)
-
-    def get_x_data(self, key: PRNGKeyArray, n: int) -> Array:
-        # We need this for forward recursion
-        key, subkey = jax.random.split(key)
-        return jax.random.uniform(subkey, shape=(n, self.dim_x), minval=-1, maxval=1)
-
-    @abstractmethod
-    def get_data(self, key: PRNGKeyArray, n: int) -> dict[str, np.ndarray]:
-        pass
-
-    def get_population(self) -> dict[str, np.ndarray]:
-        population_data = self.get_data(jax.random.key(50), 100000)
-        return jax.tree.map(lambda x: np.asarray(x, dtype=np.float64), population_data)
-
-
-class DGPRegression(DGPSynthetic):
-    """
-    Draw the weights from a prior, then draw iid data from the linear Gaussian
-    model as parameterised by the weights.
-    """
-
-    noise_std0: float
-
-    def __init__(self, key: PRNGKeyArray, n: int, dim_x: int):
-        super().__init__(key, n, dim_x)
-        self.noise_std0 = math.sqrt(0.1)
-
-    def get_data(self, key: PRNGKeyArray, n: int) -> dict[str, np.ndarray]:
-        # We need this for test data
-        key, x_key, y_key = jax.random.split(key, 3)
-        x_train = self.get_x_data(x_key, n)
-        error = jax.random.normal(y_key, shape=(n,)) * self.noise_std0
-        y_train = x_train @ self.beta0 + error
-        return {
-            "x": np.asarray(x_train, dtype=np.float64),
-            "y": np.asarray(y_train, dtype=np.float64),
-        }
-
-
-class DGPClassification(DGPSynthetic):
-    """
-    Draw the weights from a prior, then draw iid data from the linear logistic
-    regression model as parameterised by the weights.
-    """
-
-    def __init__(self, key: PRNGKeyArray, n: int, dim_x: int):
-        super().__init__(key, n, dim_x)
-
-    def get_data(self, key: PRNGKeyArray, n: int) -> dict[str, np.ndarray]:
-        key, x_key, y_key = jax.random.split(key, 3)
-        x_train = self.get_x_data(x_key, n)
-        probs = jax.scipy.special.expit(x_train @ self.beta0)
-        y_train = jax.random.bernoulli(y_key, probs)
-        return {
-            "x": np.asarray(x_train, dtype=np.float64),
-            "y": np.asarray(y_train, dtype=np.int8),
-        }
-
-
-class DGPWuMartin(DGP):
-
-    def __init__(self, key: PRNGKeyArray, n: int):
-        self.input_key = key
-        self.beta0 = jnp.array([1.0, 1.0, 2.0, -1.0])  # the truth in Wu and Martin 2023
-        self.dim_x = self.beta0.shape[0]
-        key, data_key = jax.random.split(key, 2)
-        self.train_data = self.get_data(data_key, n)
-
-    def get_x_data(self, key: PRNGKeyArray, n: int) -> Array:
-        rho = 0.2  # Correlation parameter as specified
-        key, x_key = jax.random.split(key)
-
-        # Create correlation matrix with first-order autocorrelation structure
-        # where corr(i,j) = rho^|i-j|
-        indices = jnp.arange(self.dim_x)
-        idx_diff = jnp.abs(indices[:, None] - indices[None, :])
-        corr_matrix = rho**idx_diff
-
-        # Generate x from multivariate normal with the correlation structure
-        return jax.random.multivariate_normal(
-            x_key, mean=jnp.zeros(self.dim_x), cov=corr_matrix, shape=(n,)
-        )
-
-    def get_population(self) -> dict[str, np.ndarray]:
-        population_data = self.get_data(jax.random.key(50), 100000)
-        return jax.tree.map(lambda x: np.asarray(x, dtype=np.float64), population_data)
-
-    @abstractmethod
-    def get_data(self, key: PRNGKeyArray, n: int) -> dict[str, np.ndarray]:
-        pass
-
-
-class DGPLinearRegressionWM(DGPWuMartin):
-    """
-    The example in Wu and Martin 2023, Section 5.1. Standard linear regression.
-    """
-
-    def __init__(self, key: PRNGKeyArray, n: int):
-        super().__init__(key, n)
-
-    def get_data(self, key: PRNGKeyArray, n: int) -> dict[str, np.ndarray]:
-        key, x_key, y_key = jax.random.split(key, 3)
-        x_train = self.get_x_data(x_key, n)
-        y_train = x_train @ self.beta0 + jax.random.normal(y_key, shape=(n,))
-        return {
-            "x": np.asarray(x_train, dtype=np.float64),
-            "y": np.asarray(y_train, dtype=np.float64),
-        }
-
-
-class DGPDependentErrorWM(DGPWuMartin):
-    """
-    The example in Wu and Martin 2023, Section 5.2 with dependent error.
-    """
-
-    s_small: float
-    s_mod: float
-
-    def __init__(self, key: PRNGKeyArray, n: int, s_small: float, s_mod: float):
-        super().__init__(key, n)
-        self.s_small = s_small
-        self.s_mod = s_mod
-
-    def get_data(self, key: PRNGKeyArray, n: int) -> dict[str, np.ndarray]:
-        key, x_key, y_key = jax.random.split(key, 3)
-        x_train = self.get_x_data(x_key, n)
-
-        # quantile of the first covariate
-        x_05 = jnp.quantile(x_train[:, 0], 0.05, axis=0)
-        x_95 = jnp.quantile(x_train[:, 0], 0.95, axis=0)
-
-        std = jnp.where(
-            x_train[:, 0] < x_05,
-            self.s_small,
-            jnp.where(x_train[:, 0] < x_95, self.s_mod, 1),
-        )
-        mean = x_train @ self.beta0
-        y_train = mean + std * jax.random.normal(y_key, shape=(n,))
-        return {
-            "x": np.asarray(x_train, dtype=np.float64),
-            "y": np.asarray(y_train, dtype=np.float64),
-        }
-
-
-class DGPNonNormalErrorWM(DGPWuMartin):
-    """
-    The example in Wu and Martin 2023, Section 5.2 with non-Gaussian error.
-    """
-
-    df: int
-
-    def __init__(self, key: PRNGKeyArray, n: int, df: int):
-        super().__init__(key, n)
-        self.df = df
-
-    def get_data(self, key: PRNGKeyArray, n: int) -> dict[str, np.ndarray]:
-        key, x_key, y_key = jax.random.split(key, 3)
-        x_train = self.get_x_data(x_key, n)
-        mean = x_train @ self.beta0
-        y_train = mean + jax.random.t(y_key, df=self.df, shape=(n,))
-        return {
-            "x": np.asarray(x_train, dtype=np.float64),
-            "y": np.asarray(y_train, dtype=np.float64),
-        }
-
-
 OPENML_REGRESSION = [
     "abalone",
     "abalone-semireal",
@@ -1251,11 +1073,7 @@ OPENML_CLASSIFICATION = [
 
 def load_dgp(cfg, data_key: PRNGKeyArray) -> DGP:
     # Initialize a classifier
-    if cfg.dgp.name == "regression":
-        dgp = DGPRegression(data_key, cfg.data_size, cfg.dgp.dim_x)
-    elif cfg.dgp.name == "classification":
-        dgp = DGPClassification(data_key, cfg.data_size, cfg.dgp.dim_x)
-    elif cfg.dgp.name == "classification-fixed":
+    if cfg.dgp.name == "classification-fixed":
         dgp = DGPClassificationFixed(data_key, cfg.data_size, cfg.dgp.dim_x)
     elif cfg.dgp.name == "classification-fixed-gmm":
         dgp = DGPClassificationFixedGMMLink(
@@ -1277,17 +1095,6 @@ def load_dgp(cfg, data_key: PRNGKeyArray) -> DGP:
         dgp = DGPRegressionFixedNonNormalError(
             data_key, cfg.data_size, cfg.dgp.dim_x, df=cfg.dgp.df
         )
-    elif cfg.dgp.name == "regression-wm":
-        dgp = DGPLinearRegressionWM(data_key, cfg.data_size)
-    elif cfg.dgp.name == "dependent-error-wm":
-        dgp = DGPDependentErrorWM(
-            data_key,
-            cfg.data_size,
-            s_small=cfg.dgp.s_small,
-            s_mod=cfg.dgp.s_mod,
-        )
-    elif cfg.dgp.name == "non-normal-wm":
-        dgp = DGPNonNormalErrorWM(data_key, cfg.data_size, df=cfg.dgp.df)
     elif cfg.dgp.name == "quake":
         dgp = DGPRegressionOpenML(data_key, cfg.data_size, 550, -1, 2)
     elif cfg.dgp.name == "airfoil":

@@ -15,14 +15,10 @@ import utils
 from experiment_setup import load_experiment
 
 
-BB_KEY = 49195
-BAYES_KEY = 16005
-COPULA_KEY = 91501
-
 METHOD_KEYS = {
-    "bb": BB_KEY,
-    "bayes": BAYES_KEY,
-    "copula": COPULA_KEY,
+    "bb": 49195,
+    "bayes": 16005,
+    "copula": 91501,
 }
 
 
@@ -38,10 +34,6 @@ class PosteriorContext:
     train_data: dict[str, Array]
     n_train: int
     init_theta: Array
-
-
-def posterior_dir(expdir: str, loss: str) -> str:
-    return f"{expdir}/posterior-{loss}"
 
 
 def method_key(seed: int, method: str) -> Array:
@@ -64,7 +56,7 @@ def load_posterior_context(expdir: str, loss: str) -> PosteriorContext:
     return PosteriorContext(
         expdir=expdir,
         loss=loss,
-        savedir=posterior_dir(expdir, loss),
+        savedir=f"{expdir}/posterior-{loss}",
         dgp=dgp,
         preprocessor=preprocessor,
         functional=functional,
@@ -95,7 +87,7 @@ def truncate_rollout(rollout: dict[str, Array], n: int) -> dict[str, Array]:
     return jax.tree.map(lambda x: x[:, :n], rollout)
 
 
-def rollout_length(rollout: dict[str, Array], n_train: int) -> int:
+def available_forward_steps(rollout: dict[str, Array], n_train: int) -> int:
     leaves = jax.tree.leaves(rollout)
     chex.assert_equal_shape_prefix(leaves, 2)
     return leaves[0].shape[1] - n_train
@@ -115,7 +107,11 @@ def save_mgp_posts(
     eval_t,
     max_t_override: int | None = None,
 ) -> None:
-    max_t = rollout_length(rollout, n_train) if max_t_override is None else max_t_override
+    max_t = (
+        available_forward_steps(rollout, n_train)
+        if max_t_override is None
+        else max_t_override
+    )
     for t in filter(lambda x: x <= max_t, normalise_eval_t(eval_t)):
         start = timer()
         rollout_subset = truncate_rollout(rollout, n_train + t)
@@ -137,7 +133,11 @@ def save_trace(
     require_final: bool = False,
     max_t_override: int | None = None,
 ) -> None:
-    max_t = rollout_length(rollout, n_train) if max_t_override is None else max_t_override
+    max_t = (
+        available_forward_steps(rollout, n_train)
+        if max_t_override is None
+        else max_t_override
+    )
     freq = max(max_t // int(resolution), 1)
     if require_final and max_t % freq != 0:
         raise AssertionError(
