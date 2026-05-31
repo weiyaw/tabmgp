@@ -36,6 +36,12 @@ class PosteriorContext:
     init_theta: Array
 
 
+def normalize_forward_steps(forward_steps) -> list[int]:
+    if isinstance(forward_steps, int):
+        return [forward_steps]
+    return [int(step) for step in forward_steps]
+
+
 def method_key(seed: int, method: str) -> Array:
     if method not in METHOD_KEYS:
         raise ValueError(f"Unknown method key: {method}")
@@ -81,20 +87,10 @@ def compile_rollout(expdir: str, rollout_dir_name: str) -> dict[str, Array]:
     return {k: np.stack([dic[k] for dic in rollouts]) for k in rollouts[0]}
 
 
-def truncate_rollout(rollout: dict[str, Array], n: int) -> dict[str, Array]:
-    leaves = jax.tree.leaves(rollout)
-    chex.assert_equal_shape_prefix(leaves, 2)
-    return jax.tree.map(lambda x: x[:, :n], rollout)
-
-
 def available_forward_steps(rollout: dict[str, Array], n_train: int) -> int:
     leaves = jax.tree.leaves(rollout)
     chex.assert_equal_shape_prefix(leaves, 2)
     return leaves[0].shape[1] - n_train
-
-
-def normalise_eval_t(eval_t) -> list[int]:
-    return [int(t) for t in eval_t]
 
 
 def save_mgp_posts(
@@ -104,17 +100,16 @@ def save_mgp_posts(
     savedir: str,
     run_name: str,
     n_train: int,
-    eval_t,
-    max_t_override: int | None = None,
+    forward_steps,
 ) -> None:
-    max_t = (
-        available_forward_steps(rollout, n_train)
-        if max_t_override is None
-        else max_t_override
-    )
-    for t in filter(lambda x: x <= max_t, normalise_eval_t(eval_t)):
+    max_t = available_forward_steps(rollout, n_train)
+    for raw_t in forward_steps:
+        t = int(raw_t)
+        if t > max_t:
+            continue
         start = timer()
-        rollout_subset = truncate_rollout(rollout, n_train + t)
+        chex.assert_equal_shape_prefix(jax.tree.leaves(rollout), 2)
+        rollout_subset = jax.tree.map(lambda x: x[:, : n_train + t], rollout)
         post = functional.get_mgp(rollout_subset, init_theta)
         utils.write_to(f"{savedir}/{run_name}-{t}-post.pickle", post, verbose=True)
         logging.info(f"Diagnostics: {np.mean(post[1].success)}")
@@ -131,13 +126,8 @@ def save_trace(
     resolution: int,
     batch_size,
     require_final: bool = False,
-    max_t_override: int | None = None,
 ) -> None:
-    max_t = (
-        available_forward_steps(rollout, n_train)
-        if max_t_override is None
-        else max_t_override
-    )
+    max_t = available_forward_steps(rollout, n_train)
     freq = max(max_t // int(resolution), 1)
     if require_final and max_t % freq != 0:
         raise AssertionError(

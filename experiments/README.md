@@ -68,7 +68,8 @@ From this directory:
 
 ```bash
 uv run pytest tests/test_baseline_shape_consistency.py
-uv run pytest tests/test_trace_comparison.py
+uv run pytest -m slow tests/test_trace_comparison.py
 ```
 
-The trace comparison test creates temporary runs under `outputs/`.
+Default pytest runs skip slow integration tests. The trace comparison test
+creates temporary runs under `outputs/` and removes them when it finishes.

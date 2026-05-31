@@ -18,6 +18,7 @@ from experiment_setup import get_experiment_name
 from posterior_runner import (
     compile_rollout,
     load_posterior_context,
+    normalize_forward_steps,
     save_mgp_posts,
     save_trace,
 )
@@ -80,6 +81,8 @@ def main(cfg: DictConfig):
     logging.info(f"Hydra version: {hydra.__version__}")
     logging.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
 
+    forward_steps = normalize_forward_steps(cfg.forward_steps)
+    max_steps = max(forward_steps)
     ctx = load_posterior_context(cfg.expdir, cfg.loss)
     torch.manual_seed(cfg.seed * 71)
     key = jax.random.key(cfg.seed * 37)
@@ -99,7 +102,7 @@ def main(cfg: DictConfig):
             pred_rule.sample,
             ctx.dgp.train_data["x"],
             ctx.dgp.train_data["y"],
-            cfg.forward_steps,
+            max_steps,
         )
         logging.info(f"Sample {b} takes {timer() - start:.4f} seconds")
         utils.write_to(rollout_path, {"x": x_full, "y": y_full}, verbose=True)
@@ -115,7 +118,7 @@ def main(cfg: DictConfig):
         ctx.savedir,
         cfg.run_name,
         ctx.n_train,
-        cfg.eval_t,
+        forward_steps,
     )
     if cfg.trace:
         save_trace(

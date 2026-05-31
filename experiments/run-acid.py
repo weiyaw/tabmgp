@@ -225,7 +225,7 @@ def main(cfg: DictConfig):
     dgp = utils.read_from(f"{path}/dgp.pickle")
 
     n_train = utils.get_n_data(dgp.train_data)
-    N = n_train + cfg.recursion_length
+    N = n_train + cfg.forward_steps
     x_train = dgp.train_data["x"]
     y_train = dgp.train_data["y"]
     x_support = unique_rows(x_train)

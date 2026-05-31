@@ -83,19 +83,28 @@ done
 OUTPUT_PATH="./outputs" # The folder that contains all experiment setups
 while read -r -d $'\0' path; do
     dirname=$(basename "$path")
+    exp_id="${path#${OUTPUT_PATH}/}"
+    exp_id="${exp_id%%/*}"
     seed_part="${dirname#*seed=}" # Remove prefix up to 'seed='
     seed="${seed_part%% *}"       # Remove suffix starting from the first space (or end of string)
     tabmgp_args=()
 
-    case "$path" in
-        */linreg-*/*|*/linreg-real-*/*|*/semireal-*/*)
+    case "$exp_id" in
+        linreg-*|linreg-real-*|semireal-*|concentration-02)
             tabmgp_args+=("n_estimators=8")
+            ;;
+        logreg-*|logreg-real-*|longroll-*|concentration-01)
+            tabmgp_args+=("n_estimators=4")
+            ;;
+        *)
+            echo "No n_estimators setting for experiment id: ${exp_id}" >&2
+            exit 1
             ;;
     esac
 
     case "$path" in
         */longroll-*/*)
-            tabmgp_args+=("forward_steps=1000")
+            tabmgp_args+=("forward_steps=[100,200,300,400,500,600,700,800,900,1000]")
             ;;
     esac
 
@@ -105,7 +114,6 @@ while read -r -d $'\0' path; do
         python run-bb.py "expdir='${path}'" "trace=True"
         python run-copula.py "expdir='${path}'" "trace=True" "init=std"
         python run-copula.py "expdir='${path}'" "trace=True" "init=tabpfn"
-        python run-bayes.py "expdir='${path}'" "prior=asymp"
     fi
 
     if [ "$seed" != "1001" ]; then
@@ -113,7 +121,9 @@ while read -r -d $'\0' path; do
         python run-bb.py "expdir='${path}'" "trace=False"
         python run-copula.py "expdir='${path}'" "trace=False" "init=std"
         python run-copula.py "expdir='${path}'" "trace=False" "init=tabpfn"
-        python run-bayes.py "expdir='${path}'" "prior=asymp"
     fi
+
+    python run-bayes.py "expdir='${path}'" "prior=flat"
+    python run-bayes.py "expdir='${path}'" "prior=asymp"
 
 done < <(find "$OUTPUT_PATH" -mindepth 2 -maxdepth 2 -type d -print0 | sort -z -u)

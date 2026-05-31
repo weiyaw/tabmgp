@@ -5,11 +5,10 @@ seed: 999
 run_name: tabmgp
 
 rollout_times: 100
-forward_steps: 500
+forward_steps: [250, 500]
 n_estimators: 4
 average_before_softmax: False
 
-eval_t: [250, 500, 750, 1000, 2000, 3000, 4000, 5000]
 trace: True
 resolution: 50
 

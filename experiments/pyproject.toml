@@ -30,5 +30,9 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+addopts = ["-m", "not slow"]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "slow: integration tests that run experiment scripts and write outputs",
+]

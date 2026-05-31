@@ -5,9 +5,7 @@ seed: 999
 run_name: bb
 
 rollout_times: 100
-forward_steps: 2000
-
-eval_t: [250, 500, 750, 1000, 2000, 3000, 4000, 5000]
+forward_steps: [250, 500, 1000, 2000]
 trace: True
 resolution: 50
 

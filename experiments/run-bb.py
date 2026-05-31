@@ -12,6 +12,7 @@ import utils
 from posterior_runner import (
     load_posterior_context,
     method_key,
+    normalize_forward_steps,
     save_mgp_posts,
     save_trace,
 )
@@ -30,6 +31,8 @@ def main(cfg: DictConfig):
     logging.info(f"Hydra version: {hydra.__version__}")
     logging.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
 
+    forward_steps = normalize_forward_steps(cfg.forward_steps)
+    max_steps = max(forward_steps)
     ctx = load_posterior_context(cfg.expdir, cfg.loss)
     bb_key = method_key(cfg.seed, "bb")
 
@@ -37,12 +40,12 @@ def main(cfg: DictConfig):
     start = timer()
     _, subkey = jax.random.split(bb_key)
     full_rollout = baseline.bootstrap_many_samples(
-        subkey, ctx.train_data, cfg.rollout_times, cfg.forward_steps
+        subkey, ctx.train_data, cfg.rollout_times, max_steps
     )
     logging.info(f"Shape of {cfg.run_name} rollout: {utils.tree_shape(full_rollout)}")
     chex.assert_tree_shape_prefix(
         full_rollout,
-        (cfg.rollout_times, cfg.forward_steps + ctx.n_train),
+        (cfg.rollout_times, max_steps + ctx.n_train),
     )
     jax.block_until_ready(full_rollout)
     logging.info(f"{cfg.run_name} rollout: {timer() - start:.2f} seconds")
@@ -54,7 +57,7 @@ def main(cfg: DictConfig):
         ctx.savedir,
         cfg.run_name,
         ctx.n_train,
-        cfg.eval_t,
+        forward_steps,
     )
     if cfg.trace:
         save_trace(
