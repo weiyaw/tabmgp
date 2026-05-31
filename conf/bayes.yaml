@@ -1,0 +1,19 @@
+expdir: ???
+loss: likelihood
+seed: 999
+
+eb: True
+step_size: 1e-3
+n_warmup: 1000
+n_samples: 2000
+n_chains: 4
+
+lastrun: ${now:%Y-%m-%dT%H:%M:%S%z}
+git: ${githash:}
+
+hydra:
+  run:
+    dir: "./${expdir}"
+  sweep:
+    dir: ${hydra.run.dir}
+    subdir: .

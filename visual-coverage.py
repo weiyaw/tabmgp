@@ -24,16 +24,16 @@ TABLE_DIR = Path("./table")
 SAVE_PLOTS = True
 
 DATE_TITLE = {
-	"2025-09-01": "Classification GMM $a=0$",
-	# "2025-09-02": "Classification GMM $a=-1$",
-	# "2025-09-03": "Classification GMM $a=-2$",
-	"2025-09-51": "skin",
-	"2025-09-52": "yeast",
-	"2025-09-53": "wine",
+	"longroll-04": "Classification GMM $a=0$",
+	# "longroll-05": "Classification GMM $a=-1$",
+	# "longroll-06": "Classification GMM $a=-2$",
+	"longroll-01": "skin",
+	"longroll-02": "yeast",
+	"longroll-03": "wine",
 }
 
 
-def read_tabpfn_posteriors(seed_path, loss):
+def read_tabmgp_posteriors(seed_path, loss):
 	"""
 	Return {rollout_length: posterior_samples} for one seed directory.
 	"""
@@ -42,7 +42,7 @@ def read_tabpfn_posteriors(seed_path, loss):
 		if not root.endswith(f"posterior-{loss}"):
 			continue
 		for filename in sorted(files):
-			if match := re.search(r"^tabpfn-(\d+)-post.pickle", filename):
+			if match := re.search(r"^tabmgp-(\d+)-post.pickle", filename):
 				rollout_len = int(match.group(1))
 				posterior[rollout_len] = utils.read_from(f"{root}/{filename}")[0]
 	return posterior
@@ -69,7 +69,7 @@ for date in date_dirs:
 
 	data_name = utils.get_data_name(all_paths[0])
 	_, _, theta_true, _ = load_experiment(all_paths[0], loss=LOSS)
-	all_posteriors = [read_tabpfn_posteriors(path, LOSS) for path in all_paths]
+	all_posteriors = [read_tabmgp_posteriors(path, LOSS) for path in all_paths]
 
 	non_empty = [set(p.keys()) for p in all_posteriors if p]
 	if not non_empty:
@@ -100,15 +100,15 @@ for date in date_dirs:
 
 coverage_df = pd.DataFrame(rows)
 if coverage_df.empty:
-	raise RuntimeError("No TabPFN posterior files found in 2025-09-* outputs.")
+	raise RuntimeError("No TabMGP posterior files found in longroll-* outputs.")
 
 coverage_df = coverage_df.sort_values(["date", "N - n"]).reset_index(drop=True)
 # TABLE_DIR.mkdir(parents=True, exist_ok=True)
-# coverage_df.to_csv(TABLE_DIR / "tabpfn-rollout-coverage.csv", index=False)
+# coverage_df.to_csv(TABLE_DIR / "tabmgp-rollout-coverage.csv", index=False)
 
 
 # %%
-# Plot rollout-length coverage for each 2025-09 setup
+# Plot rollout-length coverage for each longroll setup
 sns.set_theme(style="whitegrid")
 plot_dates = coverage_df["date"].drop_duplicates().tolist()
 n_plots = len(plot_dates)

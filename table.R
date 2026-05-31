@@ -53,12 +53,12 @@ style_joint_table <- function(tbl) {
 
 ## filter out useless rows and columns, and rename posterior
 joint_coverage <- read_csv("table/joint-coverage.csv") |>
-  filter(max_T, post_name %in% c("tabpfn", "bb", "copula", "gibbs-eb", "clt"), ideal_rate == 0.95) |>
+  filter(max_T, post_name %in% c("tabmgp", "bb", "copula", "bayes-eb", "clt"), ideal_rate == 0.95) |>
   select(setup = data, functional, post_name, rate, size = post_cov_trace_median, dim_theta, n_train = training_set_size) |>
   mutate(
     np_ratio = zapsmall(n_train / dim_theta, 2),
     post_name = factor(post_name,
-      levels = c("tabpfn", "bb", "copula", "gibbs-eb", "clt"),
+      levels = c("tabmgp", "bb", "copula", "bayes-eb", "clt"),
       labels = c("TabMGP", "BB", "Copula", "Bayes", "Asymptotic")
     )
   ) |>
@@ -177,11 +177,11 @@ data_info |>
 
 ## MARGINAL CI
 marginal_coverage <- read_csv("table/marginal-coverage.csv") |>
-  filter(max_T, post_name %in% c("tabpfn", "bb", "copula", "gibbs-eb", "clt"), ideal_rate == 0.95) |>
+  filter(max_T, post_name %in% c("tabmgp", "bb", "copula", "bayes-eb", "clt"), ideal_rate == 0.95) |>
   select(setup = data, theta_name, post_name, rate, size = median_width) |>
   mutate(
     post_name = factor(post_name,
-      levels = c("tabpfn", "bb", "copula", "gibbs-eb", "clt"),
+      levels = c("tabmgp", "bb", "copula", "bayes-eb", "clt"),
       labels = c("TabMGP", "BB", "Copula", "Bayes", "Asymptotic")
     )
   ) |>
@@ -305,11 +305,11 @@ marginal_coverage |>
 
 
 read_csv("table/marginal-coverage.csv") |>
-  filter(max_T, post_name %in% c("tabpfn", "bb", "copula", "gibbs-eb", "clt"), ideal_rate == 0.95) |>
+  filter(max_T, post_name %in% c("tabmgp", "bb", "copula", "bayes-eb", "clt"), ideal_rate == 0.95) |>
   select(setup = data, theta_name, post_name, rate, size = median_width) |>
   mutate(
     post_name = factor(post_name,
-      levels = c("tabpfn", "bb", "copula", "gibbs-eb", "clt"),
+      levels = c("tabmgp", "bb", "copula", "bayes-eb", "clt"),
       labels = c("TabMGP", "BB", "Copula", "Bayes", "Asymptotic")
     )
   ) |>
@@ -335,12 +335,12 @@ read_csv("table/marginal-coverage.csv") |>
 
 ## filter out useless rows and columns, and rename posterior
 joint_coverage <- read_csv("table/joint-coverage.csv") |>
-  filter(max_T, post_name %in% c("tabpfn", "gibbs", "copula-tabpfn"), ideal_rate == 0.95) |>
+  filter(max_T, post_name %in% c("tabmgp", "bayes", "copula-tabpfn"), ideal_rate == 0.95) |>
   select(setup = data, functional, post_name, rate, size = post_cov_trace_median, dim_theta, n_train = training_set_size) |>
   mutate(
     np_ratio = zapsmall(n_train / dim_theta, 2),
     post_name = factor(post_name,
-      levels = c("tabpfn", "gibbs-eb", "gibbs", "copula", "copula-tabpfn"),
+      levels = c("tabmgp", "bayes-eb", "bayes", "copula", "copula-tabpfn"),
       labels = c("TabMGP", "Bayes (Asymptotic)", "Bayes (Diffuse)", "Copula (Fong)", "Copula (NR)")
     )
   ) |>

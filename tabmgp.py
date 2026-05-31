@@ -275,13 +275,9 @@ class TabPFNClassifierPPD(TabPFNClassifier):
         assert_ppd_args_shape(x_new, x_prev, y_prev)
         self.fit(x_prev, y_prev)
 
-        # Use logits for higher precision
-        logits = self.predict_logits(x_new)  # shape: (m, num_classes)
+        # Use logits for higher precision.
+        logits = self.predict_logits(x_new).astype(np.float64)
 
-        # Convert to float64 for precision
-        logits = logits.astype(np.float64)
-
-        # Compute softmax in float64
         max_logits = np.max(logits, axis=1, keepdims=True)
         exp_logits = np.exp(logits - max_logits)
         probs = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)

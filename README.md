@@ -96,77 +96,84 @@ TabMGP.
 
 ### The workflow
 Due to computational constraints, the workflow for the coverage experiment is
-organised into two scripts:
-- `run-rollout.py`: Start an experiment by running TabMGP forward sampling steps
-  and save them into an output directory. It also saves the dataset used for the
-  experiments.
-- `run-posterior.py`: Take the output directory from `run-rollout.py` as input.
-  It reads the dataset and the forward samples of TabMGP, and computes the
-  posterior of TabMGP and all other baselines.
+organised into one setup script and one script for each posterior method:
+- `prepare-dgp.py`: Create the experiment output directory and save the dataset
+  used for the experiment as `dgp.pickle`, with the resolved DGP config as
+  `dgp.yaml`.
+- `run-tabmgp.py`: Take an experiment directory as input, run TabMGP forward
+  sampling, save samples in `tabmgp-rollout/`, and compute the TabMGP posterior.
+- `run-bb.py`, `run-copula.py`, and `run-bayes.py`: Take an experiment directory
+  as input and compute the corresponding baseline posterior.
 
 These scripts take in arguments which are managed by
 [`hydra`](https://hydra.cc/), with the default arguments given in the `conf`
 folder. For example:
 
 ``` bash
-python run-rollout.py id="2025-06-99" dgp=regression-fixed seed=1001
+python prepare-dgp.py id="example-linreg" dgp=regression-fixed seed=1001
 ```
 
-It will run forward sampling with TabPFN and save both the forward samples and
-the dataset to `./outputs/2025-06-99/name=regression-fixed dim_x=10
-resample_x=bb data=20 seed=1001`. Then,
+It will save the dataset to `./outputs/example-linreg/name=regression-fixed
+dim_x=10 data=500 seed=1001`. Then,
 
 ``` bash
-python run-posterior.py "expdir='./outputs/2025-06-99/name=regression-fixed dim_x=10
-resample_x=bb data=20 seed=1001'"
+python run-tabmgp.py "expdir='./outputs/example-linreg/name=regression-fixed dim_x=10
+data=500 seed=1001'"
+python run-bb.py "expdir='./outputs/example-linreg/name=regression-fixed dim_x=10
+data=500 seed=1001'"
+python run-copula.py "expdir='./outputs/example-linreg/name=regression-fixed dim_x=10
+data=500 seed=1001'"
+python run-bayes.py "expdir='./outputs/example-linreg/name=regression-fixed dim_x=10
+data=500 seed=1001'"
 ```
 
-will read from this directory and compute the actual TabMGP and posteriors from
-other baselines.
+will read from this directory and compute the actual TabMGP and baseline
+posteriors.
 
 ### Environment setup
 A requirements file `requirements-experiment.txt` is provided for convenience. We
-suggest a CPU version of `jax` for running `run-rollout.py` to avoid GPU
-conflicts with PyTorch. The `run-posterior.py` script doesn't require PyTorch and
-a GPU version of `jax` is preferable here.
+suggest a CPU version of `jax` for running `run-tabmgp.py` to avoid GPU conflicts
+with PyTorch. The baseline scripts don't require PyTorch and a GPU version of
+`jax` is preferable there.
 
 ### Configuration of the coverage experiment
 The shell script `run-experiments.sh` has the exact configuration and command to
 compute the posteriors used in the paper. It does 3 things:
-1. Runs `run-rollout.py` over 30 setups, 100 repetitions for each setup, for the
+1. Runs `prepare-dgp.py` and `run-tabmgp.py` over 30 setups, 100 repetitions for each setup, for the
    coverage experiment.
-2. Runs `run-rollout.py` on 2 setups, each with 6 different sizes of training
-   set, for the concentration experiment.
-3. Runs `run-posterior.py` on all the output directories produced by
-   `run-rollout.py`. It only computes the trace plots for one repetition in each
-   setup, i.e., any repetition with seed of 1001.
+2. Runs `prepare-dgp.py` and `run-tabmgp.py` on the longer-rollout setups and
+   on 2 concentration setups, each with 6 different sizes of training set.
+3. Runs `run-bb.py`, `run-copula.py`, and `run-bayes.py` on all the output
+   directories produced by `prepare-dgp.py`. It only computes the trace plots for
+   one repetition in each setup, i.e., any repetition with seed of 1001.
 
 
 ### Computation time
-The script for forward sampling `run-rollout.py` is the most computationally
+The script for forward sampling `run-tabmgp.py` is the most computationally
 intensive. In general it takes 60-100 seconds to complete a forward sampling of
 500 steps on an Nvidia L40s. By default, the script will run forward sampling 100
 times sequentially to get 100 TabMGP samples. For our coverage experiment we run
 100 repetitions over 30 setups. It took roughly 7200 GPU-hours to run just
-`run-rollout.py` alone on an Nvidia L40s.
+`run-tabmgp.py` alone on an Nvidia L40s.
 
-Subsequent posterior computation with `run-posterior.py` is relatively fast and
-can be done in a few hours on GPUs (or 1-2 days on CPUs). The main bottleneck of
-this script is the copula-based baseline.
+Subsequent baseline posterior computation is relatively fast and can be done in
+a few hours on GPUs (or 1-2 days on CPUs). The main bottleneck is the
+copula-based baseline.
 
 
 ### The acid test
 We also have a script to compute acid-related objects.
 
-- `run-acid.py`: Take the output directory from `run-rollout.py` as input. It
+- `run-acid.py`: Take the output directory from `prepare-dgp.py` as input. It
   reads the dataset and computes all objects required for acid tests.
 
 
 ### File structure
 ```
 +-- run-experiments.sh (a bash script to compute all posteriors in the paper. All outputs are saved in the `outputs` folder.)
-+-- run-rollout.py (main script to perform forward sampling of TabMGP for all the experiments)
-+-- run-posterior.py (main script to actually compute posteriors (TabMGP and other baselines) for all the experiments)
++-- prepare-dgp.py (main script to create experiment folders and datasets)
++-- run-tabmgp.py (main script to perform forward sampling and posterior computation for TabMGP)
++-- run-bb.py, run-copula.py, run-bayes.py (baseline posterior scripts)
 
 +-- pr_copula (the copula-based martingale posterior from https://github.com/edfong/MP with a bug fix)
 +-- baseline.py (all definitions of baseline methods, e.g. standard Bayes, Bayesian bootstrap, copula)

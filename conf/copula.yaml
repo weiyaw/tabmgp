@@ -1,0 +1,23 @@
+expdir: ???
+batch: null
+loss: likelihood
+seed: 999
+
+init: copula
+rollout_times: 100
+rollout_length: 2000
+num_y_grid: 100
+
+eval_t: [250, 500, 750, 1000, 2000, 3000, 4000, 5000]
+trace: True
+resolution: 50
+
+lastrun: ${now:%Y-%m-%dT%H:%M:%S%z}
+git: ${githash:}
+
+hydra:
+  run:
+    dir: "./${expdir}"
+  sweep:
+    dir: ${hydra.run.dir}
+    subdir: .

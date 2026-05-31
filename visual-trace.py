@@ -35,7 +35,7 @@ def read_trace(path):
     is the number of forward recursion.
     """
 
-    # match bb/tabpfn/copula-x-post.pickle
+    # match bb/tabmgp/copula-x-post.pickle
     if match := re.search(r".+-(\d+)-(\d+)-(\d+)-trace.pickle", os.path.basename(path)):
         trace, _ = utils.read_from(path)
         info = {
@@ -66,7 +66,7 @@ for date in DATES:
     assert mle_opt.success
     theta_name = data_info.query("name == @data_name")["theta_name"].item()
 
-    for method in ["tabpfn", "bb", "copula"]:
+    for method in ["tabmgp", "bb", "copula"]:
         trace_path = utils.get_matching_files(
             f"{path_1001}/posterior-{loss}",
             rf"^{method}-\d+-\d+-\d+-trace\.pickle",
@@ -168,12 +168,12 @@ for date in DATES:
 
     trace_path = utils.get_matching_files(
         f"{path_1001}/posterior-{loss}",
-        rf"^tabpfn-\d+-\d+-\d+-trace\.pickle",
+        rf"^tabmgp-\d+-\d+-\d+-trace\.pickle",
     )
     if len(trace_path) == 0:
         continue
     assert len(trace_path) == 1, (
-        f"Expected exactly one trace file for tabpfn in {date}, but found {len(trace_path)}."
+        f"Expected exactly one trace file for tabmgp in {date}, but found {len(trace_path)}."
     )
     trace, trace_info = read_trace(trace_path[0])
     l1 = np.mean(np.abs((trace - trace[0])), axis=-1)
@@ -189,7 +189,7 @@ plt.xlim(0, 500)
 
 if SAVE_PLOTS:
     fig.savefig(
-        f"{savedir}/l1-aggregate-0th-alldata-tabpfn.pdf",
+        f"{savedir}/l1-aggregate-0th-alldata-tabmgp.pdf",
         bbox_inches="tight",
     )
 else:
@@ -198,7 +198,7 @@ else:
 
 # %%
 # Expected l1-norm convergence plot (individual setups)
-for method in ["tabpfn", "bb"]:
+for method in ["tabmgp", "bb"]:
     # Set squeeze=False so 'axes' is always a 2D array
     # for date, data_name in TITLE.items():
     for dates, dates_tag in [
@@ -269,20 +269,20 @@ for method in ["tabpfn", "bb"]:
 # %%
 # Extra long trace plots for selected setups
 EXTRA_LONG_DATES = [
-    "2025-09-01",
-    "2025-09-02",
-    "2025-09-03",
-    "2025-09-51",
-    "2025-09-52",
-    "2025-09-53",
+    "longroll-04",
+    "longroll-05",
+    "longroll-06",
+    "longroll-01",
+    "longroll-02",
+    "longroll-03",
 ]
 EXTRA_LONG_TITLE = {
-    "2025-09-01": "Classification GMM $a=0$",
-    "2025-09-02": "Classification GMM $a=-1$",
-    "2025-09-03": "Classification GMM $a=-2$",
-    "2025-09-51": "skin",
-    "2025-09-52": "yeast",
-    "2025-09-53": "wine",
+    "longroll-04": "Classification GMM $a=0$",
+    "longroll-05": "Classification GMM $a=-1$",
+    "longroll-06": "Classification GMM $a=-2$",
+    "longroll-01": "skin",
+    "longroll-02": "yeast",
+    "longroll-03": "wine",
 }
 
 # %%
@@ -291,7 +291,7 @@ EXTRA_LONG_TITLE = {
 n_plots = len(EXTRA_LONG_DATES)
 ncols = 3
 nrows = (n_plots + ncols - 1) // ncols
-for method in ["tabpfn"]:
+for method in ["tabmgp"]:
     # Set squeeze=False so 'axes' is always a 2D array
     fig, axes = plt.subplots(
         nrows, ncols, figsize=(ncols * 6, nrows * 3.5), squeeze=False
@@ -366,12 +366,12 @@ for date in EXTRA_LONG_DATES:
 
     trace_path = utils.get_matching_files(
         f"{path_1001}/posterior-{loss}",
-        r"^tabpfn-\d+-\d+-\d+-trace\.pickle",
+        r"^tabmgp-\d+-\d+-\d+-trace\.pickle",
     )
     if len(trace_path) == 0:
         continue
     assert len(trace_path) == 1, (
-        f"Expected exactly one trace file for tabpfn in {date}, but found {len(trace_path)}."
+        f"Expected exactly one trace file for tabmgp in {date}, but found {len(trace_path)}."
     )
     trace, trace_info = read_trace(trace_path[0])
     l1 = np.mean(np.abs((trace - trace[0])), axis=-1)
@@ -387,7 +387,7 @@ plt.xlabel("N - n")
 
 if SAVE_PLOTS:
     fig.savefig(
-        f"{savedir}/extra-long-tabpfn-l1-0.pdf",
+        f"{savedir}/extra-long-tabmgp-l1-0.pdf",
         bbox_inches="tight",
     )
 else:
@@ -396,7 +396,7 @@ else:
 
 
 # Expected l1-norm convergence plot, over 20 realisation of datasets
-for method in ["tabpfn"]:
+for method in ["tabmgp"]:
     for dates, dates_tag in [
         (LINEAR_REGRESSION_DATES, "linear"),
         (LOGISTIC_REGRESSION_DATES, "logistic"),

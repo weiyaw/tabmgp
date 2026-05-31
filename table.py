@@ -138,7 +138,7 @@ def get_coverage_clt_confidence_set(
 
 
 def get_posterior_details(post_key):
-    # post_key: gibbs, gibbs-eb, bb-x, tabpfn-x, copula-x
+    # post_key: bayes, bayes-eb, bb-x, tabmgp-x, copula-x
 
     if match := re.match(r"(.+)-(\d+)", post_key):
         return {"post_name": match.group(1), "T": int(match.group(2))}
@@ -197,7 +197,7 @@ for date in DATES:
         for post_name, posterior in all_posterior.items():
             # For each type of posterior
             post_details = get_posterior_details(post_name)
-            cov_type = "ellipsoid" if post_name.startswith("gibbs") else "diag"
+            cov_type = "ellipsoid" if post_name.startswith("bayes") else "diag"
             rate, _, post_cov_trace, post_cov_rank = get_coverage_given_posterior(
                 posterior, cov_type, alpha, theta_true
             )
@@ -349,7 +349,7 @@ for date in ["2025-09-12", "2025-09-13"]:
         for post_name, posterior in all_posterior.items():
             # For each type of posterior
             post_details = get_posterior_details(post_name)
-            cov_type = "ellipsoid" if post_name.startswith("gibbs") else "diag"
+            cov_type = "ellipsoid" if post_name.startswith("bayes") else "diag"
             rate, _, post_cov_trace, post_cov_rank = get_coverage_given_posterior(
                 posterior, cov_type, alpha, theta_true
             )

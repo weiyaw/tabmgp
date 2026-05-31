@@ -44,7 +44,7 @@ def read_post(path, method, loss):
         if not root.endswith(f"posterior-{loss}"):
             continue
         for f in sorted(files):
-            # match bb/tabpfn/copula-x-post.pickle
+            # match bb/tabmgp/copula-x-post.pickle
             if match := re.search(rf"{method}-(\d+)-post.pickle", f):
                 T = int(match.group(1))
                 posterior[T], _ = utils.read_from(f"{root}/{f}")
@@ -81,9 +81,9 @@ for date in DATES:
     # Prepare a dataframe for seaborn
     data_list = []
     for method in POSTERIOR_NAMES.keys():
-        if method == "gibbs-eb":
+        if method == "bayes-eb":
             data = utils.read_from(
-                f"{all_paths[0]}/posterior-{loss}/gibbs-eb-post.pickle"
+                f"{all_paths[0]}/posterior-{loss}/bayes-eb-post.pickle"
             )[0]
         else:
             data = read_max_T_post(all_paths[0], method, loss)
@@ -183,7 +183,7 @@ for d, n in zip(
     path = f"{output_dir}/{d}/name=regression-fixed dim_x=2 noise_std=0.1 resample_x=bb data={n} seed=1001"
     for root, _, files in os.walk(path):
         for f in files:
-            if f == "tabpfn-2000-post.pickle":
+            if f == "tabmgp-2000-post.pickle":
                 post_ls.append((n, utils.read_from(os.path.join(root, f))[0]))
 
 _, _, theta_true, _ = load_experiment(path, loss=loss)
@@ -218,14 +218,14 @@ else:
 # %%
 # Histogram of the intercept of the 'concrete' setup
 
-path = f"{output_dir}/2025-07-04/name=concrete resample_x=bb data=100 seed=1001"
+path = f"{output_dir}/linreg-real-04/name=concrete resample_x=bb data=100 seed=1001"
 _, functional, theta_true, train_data = load_experiment(path, loss=loss)
 mle, _ = functional.minimize_loss(train_data, theta_true, None)
 
 fig = plt.figure(figsize=(7, 3))
 for i, method in enumerate(POSTERIOR_NAMES.keys()):
-    if method == "gibbs-eb":
-        post = utils.read_from(f"{path}/posterior-{loss}/gibbs-eb-post.pickle")[0][:, 0]
+    if method == "bayes-eb":
+        post = utils.read_from(f"{path}/posterior-{loss}/bayes-eb-post.pickle")[0][:, 0]
     else:
         post = read_max_T_post(path, method, loss)[:, 0]
 
@@ -284,8 +284,8 @@ data_info = data_info.sort_values(
 synthetic_data = data_info[data_info["name"].str.contains("regression|classification")][
     "name"
 ]
-regression_data = data_info.query("date.str.startswith('2025-07-0')")["name"]
-classification_data = data_info.query("date.str.contains('2025-07-[56]')")["name"]
+regression_data = data_info.query("date.str.startswith('linreg-real-')")["name"]
+classification_data = data_info.query("date.str.startswith('logreg-real-')")["name"]
 
 synthetic_data_xtick_label = {
     "regression-standard": r"$N(0, 1)$",
