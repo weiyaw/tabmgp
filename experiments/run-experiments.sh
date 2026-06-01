@@ -56,27 +56,36 @@ done
 
 
 # Check for convergence with larger rollout length (1000)
-python prepare-dgp.py id="longroll-01" data_size=50 dgp=openml dgp.name=skin seed=${seed}
-python prepare-dgp.py id="longroll-02" data_size=200 dgp=openml dgp.name=yeast seed=${seed}
-python prepare-dgp.py id="longroll-03" data_size=200 dgp=openml dgp.name=wine seed=${seed}
-python prepare-dgp.py id="longroll-04" data_size=100 dgp=classification-fixed-gmm dgp.a=0 seed=${seed}
-python prepare-dgp.py id="longroll-05" data_size=100 dgp=classification-fixed-gmm dgp.a=-1 seed=${seed}
-python prepare-dgp.py id="longroll-06" data_size=100 dgp=classification-fixed-gmm dgp.a=-2 seed=${seed}
+python prepare-dgp.py id="longroll-01" data_size=50 dgp=openml dgp.name=skin seed=1001
+python prepare-dgp.py id="longroll-02" data_size=200 dgp=openml dgp.name=yeast seed=1001
+python prepare-dgp.py id="longroll-03" data_size=200 dgp=openml dgp.name=wine seed=1001
+python prepare-dgp.py id="longroll-04" data_size=100 dgp=classification-fixed-gmm dgp.a=0 seed=1001
+python prepare-dgp.py id="longroll-05" data_size=100 dgp=classification-fixed-gmm dgp.a=-1 seed=1001
+python prepare-dgp.py id="longroll-06" data_size=100 dgp=classification-fixed-gmm dgp.a=-2 seed=1001
 
 
 # Check the coverage with larger rollout length (1000)
-for seed in {1001..1050}; do
+for seed in {1002..1050}; do
     python prepare-dgp.py id="longroll-04" data_size=100 dgp=classification-fixed-gmm dgp.a=0 seed=${seed}
     python prepare-dgp.py id="longroll-01" data_size=50 dgp=openml dgp.name=skin seed=${seed}
     python prepare-dgp.py id="longroll-02" data_size=200 dgp=openml dgp.name=yeast seed=${seed}
     python prepare-dgp.py id="longroll-03" data_size=200 dgp=openml dgp.name=wine seed=${seed}
 done
 
-# concentration experiment, start with data_size=50, 100, 150, 200, 250, 300
+# Concentration experiment, start with data_size=50, 100, 150, 200, 250, 300
 for data_size in 50 100 150 200 250 300; do
     python prepare-dgp.py id="concentration-01" data_size=${data_size} dgp=classification-fixed seed=1001
     python prepare-dgp.py id="concentration-02" data_size=${data_size} dgp=regression-fixed seed=1001
 done
+
+
+# ACID experiments
+python prepare-dgp.py id="acid-linreg-01" data_size=100 dgp=regression-fixed dgp.dim_x=1 seed=1001
+python prepare-dgp.py id="acid-linreg-02" data_size=100 dgp=regression-fixed dgp.dim_x=2 seed=1001
+python prepare-dgp.py id="acid-logreg-01" data_size=100 dgp=classification-fixed dgp.dim_x=1 seed=1001
+python prepare-dgp.py id="acid-logreg-02" data_size=100 dgp=classification-fixed dgp.dim_x=2 seed=1001
+python prepare-dgp.py id="acid-gamma-01" data_size=25 dgp=gamma seed=1001
+
 
 
 # Go into each setup and compute rollouts/posteriors
@@ -89,6 +98,14 @@ while read -r -d $'\0' path; do
     seed="${seed_part%% *}"       # Remove suffix starting from the first space (or end of string)
     tabmgp_args=()
 
+    if [[ "$exp_id" == acid-* ]]; then
+        for sample_idx in {0..9}; do
+            python run-acid.py "expdir='${path}'" "sample_idx=${sample_idx}"
+        done
+        continue
+    fi
+
+    # Set n_estimators=4 for logistic regression and n_estimators=8 for linear regression
     case "$exp_id" in
         linreg-*|linreg-real-*|semireal-*|concentration-02)
             tabmgp_args+=("n_estimators=8")
@@ -102,28 +119,42 @@ while read -r -d $'\0' path; do
             ;;
     esac
 
-    case "$path" in
-        */longroll-*/*)
-            tabmgp_args+=("forward_steps=[100,200,300,400,500,600,700,800,900,1000]")
+    # Coverage and diagnostic at various rollout lengths
+    if [[ "$exp_id" == longroll-* ]]; then
+        tabmgp_args+=("forward_steps=[100,200,300,400,500,600,700,800,900,1000]")
+        if [[ "$seed" == 1001 ]]; then
+            python run-tabmgp.py "expdir='${path}'" "trace=True" "${tabmgp_args[@]}"
+        else
+            python run-tabmgp.py "expdir='${path}'" "trace=False" "${tabmgp_args[@]}"
+        fi
+    fi
+
+
+    # Concentration of TabMGP
+    if [[ "$exp_id" == concentration-* ]]; then
+        python run-tabmgp.py "expdir='${path}'" "trace=True" "${tabmgp_args[@]}"
+    fi
+
+    case "$exp_id" in
+        linreg-*|linreg-real-*|logreg-*|logreg-real-*|semireal-*)
+            if [ "$seed" -ge 1001 ] && [ "$seed" -le 1020 ]; then
+                # For seeds 1001 through 1020, also compute the trace
+                python run-tabmgp.py "expdir='${path}'" "trace=True" "${tabmgp_args[@]}"
+                python run-bb.py "expdir='${path}'" "trace=True"
+                python run-copula.py "expdir='${path}'" "trace=True" "init=std"
+                python run-copula.py "expdir='${path}'" "trace=True" "init=tabpfn"
+            else
+                python run-tabmgp.py "expdir='${path}'" "trace=False" "${tabmgp_args[@]}"
+                python run-bb.py "expdir='${path}'" "trace=False"
+                python run-copula.py "expdir='${path}'" "trace=False" "init=std"
+                python run-copula.py "expdir='${path}'" "trace=False" "init=tabpfn"
+            fi
+            python run-bayes.py "expdir='${path}'" "prior=flat"
+            python run-bayes.py "expdir='${path}'" "prior=asymp"
             ;;
     esac
 
-    if [ "$seed" = "1001" ]; then
-        # For seed 1001, also compute the trace
-        python run-tabmgp.py "expdir='${path}'" "trace=True" "${tabmgp_args[@]}"
-        python run-bb.py "expdir='${path}'" "trace=True"
-        python run-copula.py "expdir='${path}'" "trace=True" "init=std"
-        python run-copula.py "expdir='${path}'" "trace=True" "init=tabpfn"
-    fi
 
-    if [ "$seed" != "1001" ]; then
-        python run-tabmgp.py "expdir='${path}'" "trace=False" "${tabmgp_args[@]}"
-        python run-bb.py "expdir='${path}'" "trace=False"
-        python run-copula.py "expdir='${path}'" "trace=False" "init=std"
-        python run-copula.py "expdir='${path}'" "trace=False" "init=tabpfn"
-    fi
-
-    python run-bayes.py "expdir='${path}'" "prior=flat"
-    python run-bayes.py "expdir='${path}'" "prior=asymp"
 
 done < <(find "$OUTPUT_PATH" -mindepth 2 -maxdepth 2 -type d -print0 | sort -z -u)
+

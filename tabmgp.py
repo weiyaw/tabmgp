@@ -70,7 +70,25 @@ class TabPFNRegressorPPD(TabPFNRegressor):
         x_prev: np.ndarray,
         y_prev: np.ndarray,
     ) -> np.ndarray:
-        # Sample from predictive density
+        """
+        Sample from P(Y | X = x_new, x_prev, y_prev).
+
+        Parameters
+        ----------
+        key : PRNGKeyArray
+            JAX PRNG key.
+        x_new : (m, d) array
+            Query covariates.
+        x_prev : (n, d) array
+            Historical covariates.
+        y_prev : (n,) array
+            Historical targets.
+
+        Return:
+        -------
+        np.ndarray
+            Sampled targets for x_new. Shape: (m,)
+        """
         pred_output = self._predict_full(x_new, x_prev, y_prev)
         bardist = pred_output["criterion"]
         logits = pred_output["logits"]  # (m, num_of_bins)
@@ -81,9 +99,9 @@ class TabPFNRegressorPPD(TabPFNRegressor):
         )  # icdf doesn't like u that are too close to 0 and 1
 
         y_new = np.array(
-            [bardist.icdf(l, float(u)).cpu() for l, u in zip(logits, all_u)],
+            [float(bardist.icdf(l, float(u))) for l, u in zip(logits, all_u)],
         )
-        return np.squeeze(y_new)
+        return y_new.reshape(logits.shape[0])
 
     def icdf(
         self, u: np.ndarray, x_new: np.ndarray, x_prev: np.ndarray, y_prev: np.ndarray
@@ -117,7 +135,7 @@ class TabPFNRegressorPPD(TabPFNRegressor):
         assert all_u.ndim == 1, "u must be 1D array"
 
         # For each u, compute for all x_new
-        results = [[bardist.icdf(l, float(u)).cpu() for l in logits] for u in all_u]
+        results = [[float(bardist.icdf(l, float(u))) for l in logits] for u in all_u]
         return np.array(results)
 
     def predict_event(
@@ -234,16 +252,43 @@ class TabPFNClassifierPPD(TabPFNClassifier):
         x_prev: np.ndarray,
         y_prev: np.ndarray,
     ) -> np.ndarray:
+        """
+        Sample from P(Y | X = x_new, x_prev, y_prev).
+
+        Parameters
+        ----------
+        key : PRNGKeyArray
+            JAX PRNG key.
+        x_new : (m, d) array
+            Query covariates.
+        x_prev : (n, d) array
+            Historical covariates.
+        y_prev : (n,) array
+            Historical targets.
+
+        Return:
+        -------
+        np.ndarray
+            Sampled targets for x_new. Shape: (m,)
+        """
         assert_ppd_args_shape(x_new, x_prev, y_prev)
         self.fit(x_prev, y_prev)
-        probs_new = self.predict_proba(x_new).squeeze()
-        idx_new = jax.random.choice(key, a=self.classes_.size, p=probs_new)
+        probs_new = self.predict_proba(x_new)
+        if probs_new.ndim == 1:
+            probs_new = probs_new[None, :]
+
+        keys = jax.random.split(key, probs_new.shape[0])
+        idx_new = np.array(
+            [
+                jax.random.choice(k, a=self.classes_.size, p=probs_i)
+                for k, probs_i in zip(keys, probs_new)
+            ]
+        )
         y_new = self.classes_[idx_new]
 
         # we use jax to sample from a categorical distribution in the PPD
         # resampling step.
-        y_new = y_new.squeeze() if isinstance(y_new, np.ndarray) else y_new
-        return y_new
+        return y_new.reshape(x_new.shape[0])
 
     def pmf(
         self,
@@ -366,10 +411,13 @@ def forward_sampling(
         rkey = jax.random.fold_in(key, i)
         rkey, subkey = jax.random.split(rkey)
         x_new = get_x_new(subkey, x_prev)
-        x_full[i] = x_new
+        assert x_new.shape == (1, dim_x)
+        x_full[i] = x_new[0]
 
         # one-step-ahead prediction of y | x
         rkey, subkey = jax.random.split(rkey)
-        y_full[i] = one_step_ahead(subkey, x_new, x_prev, y_prev)
+        y_new = one_step_ahead(subkey, x_new, x_prev, y_prev)
+        assert y_new.shape == (1,)
+        y_full[i] = y_new[0]
 
     return x_full, y_full

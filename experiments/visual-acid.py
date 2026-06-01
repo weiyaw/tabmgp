@@ -18,7 +18,6 @@ acid_dir = str(
     / "outputs"
     / "2025-06-97"
     / "name=classification-fixed dim_x=2 resample_x=bb data=100 seed=1001"
-    / "acid"
 )
 image_dir = str(REPO_ROOT.parent / "paper" / "images")
 SAVE_PLOTS = True
@@ -45,9 +44,16 @@ def compile_cond_logpmf(acid_eval_dir):
     if len(set(seq_start)) != 1 or len(set(seq_end)) != 1 or len(set(seq_freq)) != 1:
         print("Not all elements in seq_start, seq_end, and seq_freq are the same.")
 
-    N_idx = np.arange(seq_start[0], seq_end[0] + 1, seq_freq[0])
     logpmf = [utils.read_from(f"{acid_eval_dir}/{p}") for _, p in logpmf_matches]
-    logpmf = {k: np.stack([dic[k] for dic in logpmf]) for k in logpmf[0]}
+    if "N_grid" in logpmf[0]:
+        N_idx = np.asarray(logpmf[0]["N_grid"])
+    else:
+        N_idx = np.arange(seq_start[0], seq_end[0] + 1, seq_freq[0])
+    logpmf = {
+        k: np.stack([dic[k] for dic in logpmf])
+        for k in logpmf[0]
+        if k != "N_grid"
+    }
     return logpmf, N_idx
 
 

@@ -2,22 +2,16 @@ import os
 
 from tabmgp import TabPFNClassifierPPD, TabPFNRegressorPPD
 import jax
-import jax.numpy as jnp
 import chex
 import numpy as np
 
-from jax.typing import ArrayLike
 from scipy.special import logsumexp, log_softmax
 
 import torch
 
 from timeit import default_timer as timer
 
-from dgp import (
-    OPENML_CLASSIFICATION,
-    OPENML_BINARY_CLASSIFICATION,
-    OPENML_REGRESSION,
-)
+from experiment_setup import get_experiment_name
 import utils
 import logging
 import hydra
@@ -39,7 +33,6 @@ log = logging.getLogger(__name__)
 
 
 class TabPFNRegressorPPDAcid(TabPFNRegressorPPD):
-
     def log_prob(self, x_new: np.ndarray) -> np.ndarray:
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -47,15 +40,30 @@ class TabPFNRegressorPPDAcid(TabPFNRegressorPPD):
                 message="overflow encountered in cast",
                 category=RuntimeWarning,
             )
-        pred_output = self.predict(x_new, output_type="full")
+            pred_output = self.predict(x_new, output_type="full")
         logits = pred_output["logits"].cpu().numpy()
         return log_softmax(logits, axis=-1)
 
 
 class TabPFNClassifierPPDAcid(TabPFNClassifierPPD):
-
     def log_prob(self, x_new: np.ndarray) -> np.ndarray:
         return np.log(self.predict_proba(x_new))
+
+
+def make_pred_rule(exp_name: str):
+    if exp_name.startswith("classification"):
+        return TabPFNClassifierPPDAcid(
+            categorical_features_indices=[],
+            model_path="tabpfn-v2-classifier.ckpt",
+            n_estimators=4,
+        )
+    if exp_name.startswith("regression") or exp_name == "gamma":
+        return TabPFNRegressorPPDAcid(
+            categorical_features_indices=[],
+            model_path="tabpfn-v2-regressor.ckpt",
+            n_estimators=8,
+        )
+    raise ValueError(f"Unknown experiment name: {exp_name}")
 
 
 def bin_logprob(x, minlength=0):
@@ -121,7 +129,6 @@ def unique_rows(arr):
 
 
 def delta_cond_logppd(key, ppd, x_eval, x_prev, y_prev, L):
-
     # One-step-ahead ppd (cond y | x_eval)
     ppd.fit(x_prev, y_prev)
     chex.assert_shape(x_eval, (1, None))
@@ -132,7 +139,7 @@ def delta_cond_logppd(key, ppd, x_eval, x_prev, y_prev, L):
     # two-step-ahead ppd
     key, subkey = jax.random.split(key)
     batch_x_eval = np.tile(x_eval, (L, 1))
-    y_new = ppd.sample(subkey, batch_x_eval)
+    y_new = ppd.sample(subkey, batch_x_eval, x_prev, y_prev)
     chex.assert_equal_shape_prefix([y_new, batch_x_eval], 1)
 
     # Monte-Carlo estimate of two-step-ahead ppd
@@ -175,7 +182,7 @@ def delta_joint_logppd(key, ppd, x_support, idx_prev, y_prev, L):
     key, subkey = jax.random.split(key)
     idx_new = jax.random.choice(subkey, a=idx_prev, shape=(L,), replace=True)
     key, subkey = jax.random.split(key)
-    y_new = ppd.sample(subkey, x_support[idx_new])
+    y_new = ppd.sample(subkey, x_support[idx_new], x_support[idx_prev], y_prev)
     chex.assert_shape([y_new, idx_new], (L,))
 
     # Monte-Carlo estimate of two-step-ahead ppd
@@ -216,12 +223,12 @@ def main(cfg: DictConfig):
     log.info(f"Hydra version: {hydra.__version__}")
     log.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
 
-    savedir = f"{path}/acid"
+    savedir = path
     main_key = jax.random.key(utils.get_seed(path) * 38)
     sample_key = jax.random.fold_in(main_key, cfg.sample_idx + 108)
     torch.manual_seed((cfg.sample_idx + 1) * 12)
 
-    name = utils.get_name(path)
+    exp_name = get_experiment_name(path)
     dgp = utils.read_from(f"{path}/dgp.pickle")
 
     n_train = utils.get_n_data(dgp.train_data)
@@ -229,43 +236,14 @@ def main(cfg: DictConfig):
     x_train = dgp.train_data["x"]
     y_train = dgp.train_data["y"]
     x_support = unique_rows(x_train)
+    pfn_ppd = make_pred_rule(exp_name)
 
-    if name is not None and name.startswith("classification"):
-        pfn_ppd = TabPFNClassifierPPDAcid(
-            categorical_features_indices=[],
-            model_path="tabpfn-v2-classifier.ckpt",
-        )
-    elif name is not None and name.startswith("regression"):
-        pfn_ppd = TabPFNRegressorPPDAcid(
-            categorical_features_indices=[],
-            model_path="tabpfn-v2-regressor.ckpt",
-        )
-    elif name in OPENML_CLASSIFICATION + OPENML_BINARY_CLASSIFICATION:
-        categorical_features_indices = [
-            i for i, c in enumerate(dgp.categorical_x) if c
-        ]
-        pfn_ppd = TabPFNClassifierPPDAcid(
-            categorical_features_indices=categorical_features_indices,
-            model_path="tabpfn-v2-classifier.ckpt",
-        )
-    elif name in OPENML_REGRESSION:
-        categorical_features_indices = [
-            i for i, c in enumerate(dgp.categorical_x) if c
-        ]
-        pfn_ppd = TabPFNRegressorPPDAcid(
-            categorical_features_indices=categorical_features_indices,
-            model_path="tabpfn-v2-regressor.ckpt",
-        )
-    elif name == "gamma":
-        pfn_ppd = TabPFNRegressorPPDAcid(
-            categorical_features_indices=[],
-            model_path="tabpfn-v2-regressor.ckpt",
-        )
-    else:
-        raise ValueError(f"Unknown dgp name {name}")
-
-    freq = (N - n_train) // cfg.resolution
-    log.info(f"Computing {n_train}:{N}:{freq}")
+    if cfg.resolution < 1:
+        raise ValueError(f"resolution must be positive, got {cfg.resolution}")
+    freq = max(1, (N - n_train) // cfg.resolution)
+    N_grid = np.arange(n_train, N + 1, freq)
+    N_grid_set = set(N_grid.tolist())
+    log.info(f"Computing ACID diagnostics at data sizes {N_grid.tolist()}")
 
     # Evaluate at a few x across the support
     x_eval_idx = np.linspace(0, x_support.shape[0] - 1, cfg.num_x_eval, dtype=int)
@@ -283,15 +261,11 @@ def main(cfg: DictConfig):
         start = timer()
         for i in range(n_train, N + 1):
             key = jax.random.fold_in(x_key, i)
-            pfn_ppd.fit(x_prev, y_prev)
-            key, subkey = jax.random.split(key)
-            y_new = pfn_ppd.sample(subkey, x_eval)
-            x_prev = np.append(x_prev, x_eval, axis=0)
-            y_prev = np.append(y_prev, y_new, axis=0)
+            key, eval_key = jax.random.split(key)
 
-            if (i - n_train) % freq == 0:
+            if i in N_grid_set:
                 one_step_cond_logpmf_y_x, two_step_cond_logpmf_y_x = delta_cond_logppd(
-                    subkey, pfn_ppd, x_eval, x_prev, y_prev, cfg.mc_samples
+                    eval_key, pfn_ppd, x_eval, x_prev, y_prev, cfg.mc_samples
                 )
                 one_step_cond_logpmf_y_x_over_time.append(one_step_cond_logpmf_y_x)
                 two_step_cond_logpmf_y_x_over_time.append(two_step_cond_logpmf_y_x)
@@ -311,12 +285,26 @@ def main(cfg: DictConfig):
                     f"log of sup \u0394P(y | x=x[{j}], "
                     f"z_1:{i}): {np.squeeze(sup_log_delta_cond_pmf_y_x):.6f}"
                 )
+
+            if i == N:
+                continue
+
+            key, sample_key_i = jax.random.split(key)
+            y_new = pfn_ppd.sample(sample_key_i, x_eval, x_prev, y_prev)
+            x_prev = np.append(x_prev, x_eval, axis=0)
+            y_prev = np.append(y_prev, y_new, axis=0)
+
         cond_logpmf_y_x_over_time = {
+            "N_grid": N_grid,
             "one_step_cond_y_x": np.concatenate(one_step_cond_logpmf_y_x_over_time),
             "two_step_cond_y_x": np.concatenate(two_step_cond_logpmf_y_x_over_time),
         }
         chex.assert_shape(
-            jax.tree.leaves(cond_logpmf_y_x_over_time), (cfg.resolution + 1, None)
+            [
+                cond_logpmf_y_x_over_time["one_step_cond_y_x"],
+                cond_logpmf_y_x_over_time["two_step_cond_y_x"],
+            ],
+            (N_grid.size, None),
         )
 
         # shape: (N_idx, dim_y)
