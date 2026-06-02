@@ -80,12 +80,7 @@ done
 
 
 # ACID experiments
-python prepare-dgp.py id="acid-linreg-01" data_size=100 dgp=regression-fixed dgp.dim_x=1 seed=1001
-python prepare-dgp.py id="acid-linreg-02" data_size=100 dgp=regression-fixed dgp.dim_x=2 seed=1001
-python prepare-dgp.py id="acid-logreg-01" data_size=100 dgp=classification-fixed dgp.dim_x=1 seed=1001
-python prepare-dgp.py id="acid-logreg-02" data_size=100 dgp=classification-fixed dgp.dim_x=2 seed=1001
-python prepare-dgp.py id="acid-gamma-01" data_size=25 dgp=gamma seed=1001
-
+python prepare-dgp.py id="acid-01" data_size=100 dgp=classification-fixed dgp.dim_x=2 seed=1001
 
 
 # Go into each setup and compute rollouts/posteriors

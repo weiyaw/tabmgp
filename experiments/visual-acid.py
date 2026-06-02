@@ -11,15 +11,8 @@ import utils
 # %%
 # PLOT ACID RESULTS FOR CLASSIFICATION
 
-BASE_DIR = Path(__file__).resolve().parent
-REPO_ROOT = BASE_DIR.parent
-acid_dir = str(
-    BASE_DIR
-    / "outputs"
-    / "2025-06-97"
-    / "name=classification-fixed dim_x=2 resample_x=bb data=100 seed=1001"
-)
-image_dir = str(REPO_ROOT.parent / "paper" / "images")
+acid_dir = "../../outputs/2025-06-97/name=classification-fixed dim_x=2 resample_x=bb data=100 seed=1001"
+image_dir = "./images"
 SAVE_PLOTS = True
 
 acid_eval_dir = [
