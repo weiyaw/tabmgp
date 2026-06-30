@@ -72,8 +72,8 @@ for seed in {1002..1050}; do
     python prepare-dgp.py id="longroll-03" data_size=200 dgp=openml dgp.name=wine seed=${seed}
 done
 
-# Concentration experiment, start with data_size=50, 100, 150, 200, 250, 300
-for data_size in 50 100 150 200 250 300; do
+# Concentration experiment, start with data_size=500, 1000, 1500, 2000
+for data_size in 500 1000 1500 2000; do
     python prepare-dgp.py id="concentration-01" data_size=${data_size} dgp=classification-fixed seed=1001
     python prepare-dgp.py id="concentration-02" data_size=${data_size} dgp=regression-fixed seed=1001
 done
