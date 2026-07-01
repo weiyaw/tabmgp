@@ -97,6 +97,28 @@ def test_forward_sampling_accepts_single_row_sample_vector():
     np.testing.assert_array_equal(y_full[-2:], np.array([2.0, 3.0]))
 
 
+def test_forward_sampling_resumes_deterministically():
+    x_train = np.array([[0.0, 0.0], [1.0, 1.0]])
+    y_train = np.array([0.0, 1.0])
+    key = jax.random.key(0)
+
+    def one_step_ahead(key, x_new, x_prev, y_prev):
+        return np.asarray([jax.random.uniform(key)])
+
+    x_full, y_full = forward_sampling(
+        key, one_step_ahead, x_train, y_train, forward_steps=4
+    )
+    x_partial, y_partial = forward_sampling(
+        key, one_step_ahead, x_train, y_train, forward_steps=2
+    )
+    x_resumed, y_resumed = forward_sampling(
+        key, one_step_ahead, x_partial, y_partial, forward_steps=2
+    )
+
+    np.testing.assert_array_equal(x_resumed, x_full)
+    np.testing.assert_array_equal(y_resumed, y_full)
+
+
 def test_forward_sampling_rejects_scalar_sample():
     x_train = np.array([[0.0, 0.0], [1.0, 1.0]])
     y_train = np.array([0.0, 1.0])

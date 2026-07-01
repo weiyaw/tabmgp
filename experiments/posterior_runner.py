@@ -106,7 +106,7 @@ def save_mgp_posts(
     for raw_t in forward_steps:
         t = int(raw_t)
         if t > max_t:
-            continue
+            raise ValueError(f"Requested forward step {t} exceeds max {max_t}")
         start = timer()
         chex.assert_equal_shape_prefix(jax.tree.leaves(rollout), 2)
         rollout_subset = jax.tree.map(lambda x: x[:, : n_train + t], rollout)

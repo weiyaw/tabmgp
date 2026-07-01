@@ -5,6 +5,7 @@ from timeit import default_timer as timer
 
 import hydra
 import jax
+import chex
 import torch
 from omegaconf import DictConfig, OmegaConf
 
@@ -49,9 +50,7 @@ def make_pred_rule(cfg: DictConfig, dgp, exp_name: str):
             model_path="tabpfn-v2-classifier.ckpt",
         )
     if exp_name in OPENML_CLASSIFICATION or exp_name in OPENML_BINARY_CLASSIFICATION:
-        categorical_features_indices = [
-            i for i, c in enumerate(dgp.categorical_x) if c
-        ]
+        categorical_features_indices = [i for i, c in enumerate(dgp.categorical_x) if c]
         return TabPFNClassifierPPD(
             categorical_features_indices=categorical_features_indices,
             n_estimators=cfg.n_estimators,
@@ -59,9 +58,7 @@ def make_pred_rule(cfg: DictConfig, dgp, exp_name: str):
             model_path="tabpfn-v2-classifier.ckpt",
         )
     if exp_name in OPENML_REGRESSION:
-        categorical_features_indices = [
-            i for i, c in enumerate(dgp.categorical_x) if c
-        ]
+        categorical_features_indices = [i for i, c in enumerate(dgp.categorical_x) if c]
         return TabPFNRegressorPPD(
             categorical_features_indices=categorical_features_indices,
             n_estimators=cfg.n_estimators,
@@ -84,6 +81,7 @@ def main(cfg: DictConfig):
     forward_steps = normalize_forward_steps(cfg.forward_steps)
     max_steps = max(forward_steps)
     ctx = load_posterior_context(cfg.expdir, cfg.loss)
+    rollout_length = ctx.n_train + max_steps
     torch.manual_seed(cfg.seed * 71)
     key = jax.random.key(cfg.seed * 37)
     _, _, resample_key = jax.random.split(key, 3)
@@ -94,15 +92,24 @@ def main(cfg: DictConfig):
         bkey = jax.random.fold_in(resample_key, b)
         rollout_path = f"{cfg.expdir}/tabmgp-rollout/rollout-{b}.pickle"
         if os.path.exists(rollout_path):
+            rollout = utils.read_from(rollout_path)
+            x_init, y_init = rollout["x"], rollout["y"]
+        else:
+            x_init = ctx.dgp.train_data["x"]
+            y_init = ctx.dgp.train_data["y"]
+
+        chex.assert_equal_shape_prefix([x_init, y_init], 1)
+        required_steps = rollout_length - len(y_init)
+        if required_steps <= 0:
             logging.info(f"Sample {b} untouched.")
             continue
 
         x_full, y_full = forward_sampling(
             bkey,
             pred_rule.sample,
-            ctx.dgp.train_data["x"],
-            ctx.dgp.train_data["y"],
-            max_steps,
+            x_init,
+            y_init,
+            required_steps,
         )
         logging.info(f"Sample {b} takes {timer() - start:.4f} seconds")
         utils.write_to(rollout_path, {"x": x_full, "y": y_full}, verbose=True)
