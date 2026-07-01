@@ -127,7 +127,8 @@ while read -r -d $'\0' path; do
 
     # Concentration of TabMGP
     if [[ "$exp_id" == concentration-* ]]; then
-        python run-tabmgp.py "expdir='${path}'" "trace=True" "${tabmgp_args[@]}"
+        tabmgp_args+=("forward_steps=[500,2000]")
+        python run-tabmgp.py "expdir='${path}'" "trace=False" "${tabmgp_args[@]}"
     fi
 
     case "$exp_id" in
@@ -152,4 +153,3 @@ while read -r -d $'\0' path; do
 
 
 done < <(find "$OUTPUT_PATH" -mindepth 2 -maxdepth 2 -type d -print0 | sort -z -u)
-
