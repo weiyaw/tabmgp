@@ -5,16 +5,16 @@ from timeit import default_timer as timer
 import chex
 import hydra
 import jax
+import numpy as np
 from omegaconf import DictConfig, OmegaConf
 
 import baseline
 import utils
 from posterior_runner import (
+    available_forward_steps,
     load_posterior_context,
     method_key,
     normalize_forward_steps,
-    save_mgp_posts,
-    save_trace,
 )
 
 
@@ -50,26 +50,36 @@ def main(cfg: DictConfig):
     jax.block_until_ready(full_rollout)
     logging.info(f"{cfg.run_name} rollout: {timer() - start:.2f} seconds")
 
-    save_mgp_posts(
-        ctx.functional,
-        full_rollout,
-        ctx.init_theta,
-        ctx.savedir,
-        cfg.run_name,
-        ctx.n_train,
-        forward_steps,
-    )
+    n_steps = available_forward_steps(full_rollout, ctx.n_train)
+    if max_steps > n_steps:
+        raise ValueError(f"Requested forward step {max_steps} exceeds max {n_steps}")
+
+    for t in forward_steps:
+        start = timer()
+        rollout_t = jax.tree.map(lambda x: x[:, : ctx.n_train + t], full_rollout)
+        post = ctx.functional.get_mgp(rollout_t, ctx.init_theta)
+        utils.write_to(
+            f"{ctx.savedir}/{cfg.run_name}-{t}-post.pickle", post, verbose=True
+        )
+        logging.info(f"Diagnostics: {np.mean(post[1].success)}")
+        logging.info(f"{cfg.run_name} posterior ({t}): {timer() - start:.2f} seconds")
+
     if cfg.trace:
-        save_trace(
-            ctx.functional,
+        start = timer()
+        freq = max(n_steps // int(cfg.resolution), 1)
+        trace = ctx.functional.get_theta_trace(
             full_rollout,
             ctx.init_theta,
-            ctx.savedir,
-            cfg.run_name,
-            ctx.n_train,
-            cfg.resolution,
-            cfg.batch,
+            start=ctx.n_train - 1,
+            batch_size=cfg.batch,
+            freq=freq,
         )
+        utils.write_to(
+            f"{ctx.savedir}/{cfg.run_name}-{ctx.n_train}-{ctx.n_train + n_steps}-{freq}-trace.pickle",
+            trace,
+            verbose=True,
+        )
+        logging.info(f"{cfg.run_name} trace: {timer() - start:.2f} seconds")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,6 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from timeit import default_timer as timer
 
 import chex
 import jax
@@ -91,60 +90,3 @@ def available_forward_steps(rollout: dict[str, Array], n_train: int) -> int:
     leaves = jax.tree.leaves(rollout)
     chex.assert_equal_shape_prefix(leaves, 2)
     return leaves[0].shape[1] - n_train
-
-
-def save_mgp_posts(
-    functional,
-    rollout: dict[str, Array],
-    init_theta: Array,
-    savedir: str,
-    run_name: str,
-    n_train: int,
-    forward_steps,
-) -> None:
-    max_t = available_forward_steps(rollout, n_train)
-    for raw_t in forward_steps:
-        t = int(raw_t)
-        if t > max_t:
-            raise ValueError(f"Requested forward step {t} exceeds max {max_t}")
-        start = timer()
-        chex.assert_equal_shape_prefix(jax.tree.leaves(rollout), 2)
-        rollout_subset = jax.tree.map(lambda x: x[:, : n_train + t], rollout)
-        post = functional.get_mgp(rollout_subset, init_theta)
-        utils.write_to(f"{savedir}/{run_name}-{t}-post.pickle", post, verbose=True)
-        logging.info(f"Diagnostics: {np.mean(post[1].success)}")
-        logging.info(f"{run_name} posterior ({t}): {timer() - start:.2f} seconds")
-
-
-def save_trace(
-    functional,
-    rollout: dict[str, Array],
-    init_theta: Array,
-    savedir: str,
-    run_name: str,
-    n_train: int,
-    resolution: int,
-    batch_size,
-    require_final: bool = False,
-) -> None:
-    max_t = available_forward_steps(rollout, n_train)
-    freq = max(max_t // int(resolution), 1)
-    if require_final and max_t % freq != 0:
-        raise AssertionError(
-            "Trace will not include the final state. Adjust resolution."
-        )
-
-    start = timer()
-    trace = functional.get_theta_trace(
-        rollout,
-        init_theta,
-        start=n_train - 1,
-        batch_size=batch_size,
-        freq=freq,
-    )
-    utils.write_to(
-        f"{savedir}/{run_name}-{n_train}-{max_t + n_train}-{freq}-trace.pickle",
-        trace,
-        verbose=True,
-    )
-    logging.info(f"{run_name} trace: {timer() - start:.2f} seconds")

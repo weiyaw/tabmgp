@@ -24,7 +24,12 @@ def _run(tmp_path, monkeypatch, initial_rollout=None, fail_on_sampling=False):
         n_train=2,
         dgp=SimpleNamespace(train_data=train_data),
         preprocessor=SimpleNamespace(encode_data=lambda data: data),
-        functional=object(),
+        functional=SimpleNamespace(
+            get_mgp=lambda rollout, init_theta: (
+                None,
+                SimpleNamespace(success=np.array([True])),
+            )
+        ),
         init_theta=None,
         savedir=str(tmp_path / "posterior-likelihood"),
     )
@@ -38,7 +43,6 @@ def _run(tmp_path, monkeypatch, initial_rollout=None, fail_on_sampling=False):
     monkeypatch.setattr(run_tabmgp, "load_posterior_context", lambda *args: ctx)
     monkeypatch.setattr(run_tabmgp, "get_experiment_name", lambda *args: "test")
     monkeypatch.setattr(run_tabmgp, "make_pred_rule", lambda *args: pred_rule)
-    monkeypatch.setattr(run_tabmgp, "save_mgp_posts", lambda *args: None)
     if fail_on_sampling:
         monkeypatch.setattr(
             run_tabmgp,

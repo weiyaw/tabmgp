@@ -4,6 +4,7 @@ from timeit import default_timer as timer
 
 import hydra
 import jax
+import numpy as np
 from omegaconf import DictConfig, OmegaConf
 
 import utils
@@ -15,11 +16,10 @@ from baseline import (
 )
 from functional import LinearRegression, LogisticRegression
 from posterior_runner import (
+    available_forward_steps,
     load_posterior_context,
     method_key,
     normalize_forward_steps,
-    save_mgp_posts,
-    save_trace,
 )
 
 
@@ -101,27 +101,52 @@ def main(cfg: DictConfig):
     logging.info(f"{cfg.run_name} rollout: {timer() - start:.2f} seconds")
     full_rollout = ctx.preprocessor.encode_data(full_rollout)
 
-    save_mgp_posts(
-        ctx.functional,
-        full_rollout,
-        ctx.init_theta,
-        ctx.savedir,
-        cfg.run_name,
-        ctx.n_train,
-        forward_steps,
-    )
-    if cfg.trace and isinstance(ctx.functional, LogisticRegression):
-        save_trace(
-            ctx.functional,
+    if isinstance(ctx.functional, LinearRegression):
+        start = timer()
+        post = ctx.functional.get_mgp(full_rollout, ctx.init_theta)
+        utils.write_to(
+            f"{ctx.savedir}/{cfg.run_name}-{max_steps}-post.pickle", post, verbose=True
+        )
+        logging.info(f"Diagnostics: {np.mean(post[1].success)}")
+        logging.info(
+            f"{cfg.run_name} posterior ({max_steps}): {timer() - start:.2f} seconds"
+        )
+        return
+
+    n_steps = available_forward_steps(full_rollout, ctx.n_train)
+    if max_steps > n_steps:
+        raise ValueError(f"Requested forward step {max_steps} exceeds max {n_steps}")
+
+    for t in forward_steps:
+        start = timer()
+        rollout_t = jax.tree.map(lambda x: x[:, : ctx.n_train + t], full_rollout)
+        post = ctx.functional.get_mgp(rollout_t, ctx.init_theta)
+        utils.write_to(
+            f"{ctx.savedir}/{cfg.run_name}-{t}-post.pickle", post, verbose=True
+        )
+        logging.info(f"Diagnostics: {np.mean(post[1].success)}")
+        logging.info(f"{cfg.run_name} posterior ({t}): {timer() - start:.2f} seconds")
+
+    if cfg.trace:
+        start = timer()
+        freq = max(n_steps // int(cfg.resolution), 1)
+        if n_steps % freq != 0:
+            raise AssertionError(
+                "Trace will not include the final state. Adjust resolution."
+            )
+        trace = ctx.functional.get_theta_trace(
             full_rollout,
             ctx.init_theta,
-            ctx.savedir,
-            cfg.run_name,
-            ctx.n_train,
-            cfg.resolution,
-            cfg.batch,
-            require_final=True,
+            start=ctx.n_train - 1,
+            batch_size=cfg.batch,
+            freq=freq,
         )
+        utils.write_to(
+            f"{ctx.savedir}/{cfg.run_name}-{ctx.n_train}-{ctx.n_train + n_steps}-{freq}-trace.pickle",
+            trace,
+            verbose=True,
+        )
+        logging.info(f"{cfg.run_name} trace: {timer() - start:.2f} seconds")
 
 
 if __name__ == "__main__":
